@@ -8,6 +8,7 @@ import {
   getAllProducts,
   checkWalletConnection,
   createStore,
+  addProduct,
 } from "./utils/web3";
 
 function App() {
@@ -104,6 +105,7 @@ function App() {
                   {products.map((product) => (
                     <ProductCard
                       key={product.id}
+                      id={product.id}
                       name={`Produit #${product.id}`}
                       price={`${product.price} ETH`}
                       seller={product.seller}
@@ -115,27 +117,47 @@ function App() {
           )}
 
           {activePage === "vendre" && (
-            <section className="page-card">
-              <h1>Créer une boutique</h1>
+  <section className="page-card">
+    <h1>Vendre</h1>
 
-              <button
-                onClick={async () => {
-                  const result = await createStore(
-                    "Ma boutique",
-                    "ipfs://test"
-                  );
+    <h2>Créer une boutique</h2>
+    <button
+      onClick={async () => {
+        const result = await createStore("Ma boutique", "ipfs://test");
 
-                  if (result.success) {
-                    alert("Boutique créée !");
-                  } else {
-                    alert(result.error);
-                  }
-                }}
-              >
-                Créer ma boutique
-              </button>
-            </section>
-          )}
+        if (result.success) {
+          alert("Boutique créée !");
+        } else {
+          alert(result.error);
+        }
+      }}
+    >
+      Créer ma boutique
+    </button>
+
+    <hr style={{ margin: "20px 0" }} />
+
+    <h2>Ajouter un produit</h2>
+    <button
+      onClick={async () => {
+        const result = await addProduct(
+          "10000000000000000",
+          "5",
+          "ipfs://test-product"
+        );
+
+        if (result.success) {
+          alert("Produit ajouté !");
+          loadProducts();
+        } else {
+          alert(result.error);
+        }
+      }}
+    >
+      Ajouter produit test
+    </button>
+  </section>
+)}
 
           {activePage === "transactions" && (
             <section className="page-card">

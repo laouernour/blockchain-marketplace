@@ -144,3 +144,55 @@ export const createStore = async (name, ipfsHash) => {
     };
   }
 };
+// Ajouter un produit
+export const addProduct = async (price, stock, ipfsHash) => {
+  try {
+    const contract = await getContract();
+
+    const tx = await contract.addProduct(
+      BigInt(price),
+      BigInt(stock),
+      ipfsHash
+    );
+
+    await tx.wait();
+
+    return { success: true };
+  } catch (error) {
+    console.error("Erreur addProduct:", error);
+
+    return {
+      success: false,
+      error:
+        error?.reason ||
+        error?.shortMessage ||
+        error?.message ||
+        "Erreur inconnue",
+    };
+  }
+};
+// Acheter un produit
+export const purchaseProduct = async (productId, priceWei) => {
+  try {
+    const contract = await getContract();
+
+    const tx = await contract.purchase(productId, {
+      value: BigInt(priceWei),
+    });
+
+    await tx.wait();
+
+    return { success: true };
+  } catch (error) {
+    console.error("Erreur purchaseProduct:", error);
+
+    return {
+      success: false,
+      error:
+        error?.reason ||
+        error?.shortMessage ||
+        error?.message ||
+        "Erreur inconnue",
+    };
+  }
+};
