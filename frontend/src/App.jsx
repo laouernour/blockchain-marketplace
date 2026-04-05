@@ -15,41 +15,105 @@ import {
   submitReview,
   getReviewsByProduct,
   getTransactionDetails,
+  getMyStoreId,
 } from "./utils/web3";
 
+import { uploadJsonToIPFS } from "./utils/ipfs";
+
 function App() {
-  const [activePage, setActivePage] = useState("dashboard");
+  const [activePage, setActivePage] = useState("marketplace");
   const [account, setAccount] = useState("");
   const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [orders, setOrders] = useState([]);
-const [selectedOrderId, setSelectedOrderId] = useState(null);
-const [reviewRating, setReviewRating] = useState(5);
-const [reviewComment, setReviewComment] = useState("");
-const [reviewProductId, setReviewProductId] = useState(null);
-const [productReviews, setProductReviews] = useState([]);
-const [productPrice, setProductPrice] = useState("");
-const [productStock, setProductStock] = useState("");
-const [productIpfsHash, setProductIpfsHash] = useState("");
-const [selectedTxDetails, setSelectedTxDetails] = useState(null);
-const [selectedTxHash, setSelectedTxHash] = useState("");
+  const [selectedOrderId, setSelectedOrderId] = useState(null);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState("");
+  const [reviewProductId, setReviewProductId] = useState(null);
+  const [productReviews, setProductReviews] = useState([]);
+  const [productName, setProductName] = useState("");
+  const [productDescription, setProductDescription] = useState("");
+  const [productImage, setProductImage] = useState("");
+  const [productPrice, setProductPrice] = useState("");
+  const [productStock, setProductStock] = useState("");
+  const [productIpfsHash, setProductIpfsHash] = useState("");
+  const [selectedTxDetails, setSelectedTxDetails] = useState(null);
+  const [selectedTxHash, setSelectedTxHash] = useState("");
+  const [myStoreId, setMyStoreId] = useState(0);
+  const [loadingStore, setLoadingStore] = useState(false);
+  const [storeName, setStoreName] = useState("");
+  
 
   const connectWallet = async () => {
-    const account = await connect();
-    if (account) {
-      setAccount(account);
-    }
-  };
-
+  const account = await connect();
+  if (account) {
+    setAccount(account);
+    await loadMyStore();
+  }
+};
   const loadProducts = async () => {
+  try {
     setLoadingProducts(true);
+
     const data = await getAllProducts();
-    setProducts(data);
+
+    const productsWithMetadata = await Promise.all(
+      data.map(async (product) => {
+        const metadata = await getIpfsJson(product.ipfsHash);
+
+        return {
+          ...product,
+          metadata,
+        };
+      })
+    );
+
+    setProducts(productsWithMetadata);
+  } catch (error) {
+    console.error("Erreur loadProducts:", error);
+    setProducts([]);
+  } finally {
     setLoadingProducts(false);
-  };
+  }
+};
+
+  const getIpfsJson = async (ipfsHash) => {
+  try {
+    if (!ipfsHash || !ipfsHash.startsWith("ipfs://")) {
+      return null;
+    }
+
+    const cleanHash = ipfsHash.replace("ipfs://", "");
+    const response = await fetch(`https://ipfs.io/ipfs/${cleanHash}`);
+
+    if (!response.ok) {
+      return null;
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("Erreur lecture IPFS:", error);
+    return null;
+  }
+};
+
+
 const loadOrders = async () => {
   const data = await getAllOrders();
   setOrders(data);
+};
+
+const loadMyStore = async () => {
+  try {
+    setLoadingStore(true);
+    const storeId = await getMyStoreId();
+    setMyStoreId(storeId);
+  } catch (error) {
+    console.error("Erreur loadMyStore:", error);
+    setMyStoreId(0);
+  } finally {
+    setLoadingStore(false);
+  }
 };
 
 const getStoredTxHash = (orderId) => {
@@ -99,17 +163,20 @@ const openTransactionDetails = async (orderId) => {
   initWallet();
   loadProducts();
   loadOrders();
+  loadMyStore();
 }, []);
   useEffect(() => {
     if (!window.ethereum) return;
 
-    const handleAccountsChanged = (accounts) => {
-      if (accounts.length === 0) {
-        setAccount("");
-      } else {
-        setAccount(accounts[0]);
-      }
-    };
+    const handleAccountsChanged = async (accounts) => {
+  if (accounts.length === 0) {
+    setAccount("");
+    setMyStoreId(0);
+  } else {
+    setAccount(accounts[0]);
+    await loadMyStore();
+  }
+};
 
     window.ethereum.on("accountsChanged", handleAccountsChanged);
 
@@ -134,15 +201,6 @@ const openTransactionDetails = async (orderId) => {
         </p>
 
         <main className="content">
-          {activePage === "dashboard" && (
-            <section className="page-card">
-              <h1>Dashboard</h1>
-              <p>
-                Vue d’ensemble de la marketplace décentralisée, des ventes,
-                des transactions et des avis.
-              </p>
-            </section>
-          )}
 
           {activePage === "marketplace" && (
             <section className="page-card">
@@ -156,13 +214,19 @@ const openTransactionDetails = async (orderId) => {
                 <div className="products-grid">
                   {products.map((product) => (
                     <ProductCard
-                      key={product.id}
-                      id={product.id}
-                      name={`Produit #${product.id}`}
-                      price={`${product.price} ETH`}
-                      seller={product.seller}
-                      averageRating={product.averageRating}
-                    />
+  key={product.id}
+  id={product.id}
+  name={product.metadata?.name || `Produit #${product.id}`}
+  description={product.metadata?.description || ""}
+  image={product.metadata?.image || ""}
+  price={`${product.price} ETH`}
+  seller={product.seller}
+  averageRating={product.averageRating}
+  onPurchaseSuccess={async () => {
+    await loadProducts();
+    await loadOrders();
+  }}
+/>
                   ))}
                 </div>
               )}
@@ -173,24 +237,86 @@ const openTransactionDetails = async (orderId) => {
   <section className="page-card">
     <h1>Vendre</h1>
 
-    <h2>Créer une boutique</h2>
-    <button
-      onClick={async () => {
-        const result = await createStore("Ma boutique", "ipfs://test");
+    {loadingStore ? (
+      <p>Chargement de la boutique...</p>
+    ) : myStoreId === 0 ? (
+      <div>
+        <h2>Créer une boutique</h2>
+        <p>Vous n’avez pas encore de boutique.</p>
+        <input
+          type="text"
+          placeholder="Nom de la boutique"
+          value={storeName}
+          onChange={(e) => setStoreName(e.target.value)}
+          style={{ display: "block", marginBottom: "10px", width: "100%" }}
+       />
 
-        if (result.success) {
-          alert("Boutique créée !");
-        } else {
-          alert(result.error);
-        }
-      }}
-    >
-      Créer ma boutique
-    </button>
+<input
+  type="text"
+  placeholder="IPFS Hash de la boutique"
+  value={storeIpfsHash}
+  onChange={(e) => setStoreIpfsHash(e.target.value)}
+  style={{ display: "block", marginBottom: "10px", width: "100%" }}
+/>
 
-    <hr style={{ margin: "20px 0" }} />
+        <button
+          onClick={async () => {
+  if (!storeName.trim()) {
+    alert("Nom de boutique invalide");
+    return;
+  }
 
-<h2>Ajouter un produit</h2>
+  if (!storeIpfsHash.trim()) {
+    alert("IPFS Hash invalide");
+    return;
+  }
+
+  const result = await createStore(storeName, storeIpfsHash);
+
+  if (result.success) {
+    alert("Boutique créée !");
+    setStoreName("");
+    setStoreIpfsHash("");
+    await loadMyStore();
+  } else {
+    alert(result.error);
+  }
+}}
+        >
+          Créer ma boutique
+        </button>
+      </div>
+    ) : (
+      <div>
+        <p>Votre boutique existe déjà (ID : {myStoreId})</p>
+
+        <hr style={{ margin: "20px 0" }} />
+
+        <h2>Ajouter un produit</h2>
+
+        <input
+  type="text"
+  placeholder="Nom du produit"
+  value={productName}
+  onChange={(e) => setProductName(e.target.value)}
+  style={{ display: "block", marginBottom: "10px", width: "100%" }}
+/>
+
+<textarea
+  placeholder="Description du produit"
+  value={productDescription}
+  onChange={(e) => setProductDescription(e.target.value)}
+  rows={4}
+  style={{ display: "block", marginBottom: "10px", width: "100%" }}
+/>
+
+<input
+  type="text"
+  placeholder="Image URL"
+  value={productImage}
+  onChange={(e) => setProductImage(e.target.value)}
+  style={{ display: "block", marginBottom: "10px", width: "100%" }}
+/>
 
 <input
   type="text"
@@ -209,49 +335,79 @@ const openTransactionDetails = async (orderId) => {
   style={{ display: "block", marginBottom: "10px", width: "100%" }}
 />
 
-<input
-  type="text"
-  placeholder="IPFS Hash (ex: ipfs://mon-produit)"
-  value={productIpfsHash}
-  onChange={(e) => setProductIpfsHash(e.target.value)}
-  style={{ display: "block", marginBottom: "10px", width: "100%" }}
-/>
+        <button
+          onClick={async () => {
+  if (!productName.trim()) {
+    alert("Nom du produit invalide");
+    return;
+  }
 
-<button
-  onClick={async () => {
-    // 🔒 Vérification prix
-    if (!productPrice || isNaN(productPrice)) {
-      alert("Prix invalide");
-      return;
-    }
+  if (!productDescription.trim()) {
+    alert("Description invalide");
+    return;
+  }
 
-    // 🔒 Vérification stock
-    if (Number(productStock) <= 0) {
-      alert("Stock invalide");
-      return;
-    }
+  if (!productImage.trim()) {
+    alert("Image invalide");
+    return;
+  }
 
-    const priceInWei = parseEther(productPrice);
+  if (!productPrice || isNaN(productPrice)) {
+    alert("Prix invalide");
+    return;
+  }
 
-    const result = await addProduct(
-      priceInWei.toString(),
-      productStock,
-      productIpfsHash
-    );
+  if (Number(productStock) <= 0) {
+    alert("Stock invalide");
+    return;
+  }
 
-    if (result.success) {
-      alert("Produit ajouté !");
-      setProductPrice("");
-      setProductStock("");
-      setProductIpfsHash("");
-      loadProducts();
-    } else {
-      alert(result.error);
-    }
-  }}
->
-  Ajouter le produit
-</button>
+  // 1. Construire JSON produit
+  const productMetadata = {
+    name: productName,
+    description: productDescription,
+    image: productImage,
+  };
+
+  // 2. Upload IPFS
+  const uploadResult = await uploadJsonToIPFS(productMetadata);
+
+  if (!uploadResult.success) {
+    alert(uploadResult.error || "Erreur upload IPFS");
+    return;
+  }
+
+  console.log("IPFS HASH:", uploadResult.ipfsHash);
+
+  // 3. Convertir prix
+  const priceInWei = parseEther(productPrice);
+
+  // 4. Envoyer au smart contract
+  const result = await addProduct(
+    priceInWei.toString(),
+    productStock,
+    uploadResult.ipfsHash
+  );
+
+  if (result.success) {
+    alert("Produit ajouté !");
+
+    setProductName("");
+    setProductDescription("");
+    setProductImage("");
+    setProductPrice("");
+    setProductStock("");
+
+    await loadProducts();
+  } else {
+    alert(result.error);
+  }
+}}
+        >
+          Ajouter le produit
+        </button>
+      </div>
+    )}
   </section>
 )}
 

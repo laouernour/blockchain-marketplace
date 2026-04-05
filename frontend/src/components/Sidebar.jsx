@@ -4,13 +4,6 @@ function Sidebar({ activePage, setActivePage }) {
       <div className="sidebar-logo">CM</div>
 
       <button
-        className={`nav-item ${activePage === "dashboard" ? "active" : ""}`}
-        onClick={() => setActivePage("dashboard")}
-      >
-        Dashboard
-      </button>
-
-      <button
         className={`nav-item ${activePage === "marketplace" ? "active" : ""}`}
         onClick={() => setActivePage("marketplace")}
       >
@@ -29,13 +22,6 @@ function Sidebar({ activePage, setActivePage }) {
         onClick={() => setActivePage("transactions")}
       >
         Transactions
-      </button>
-
-      <button
-        className={`nav-item ${activePage === "avis" ? "active" : ""}`}
-        onClick={() => setActivePage("avis")}
-      >
-        Avis
       </button>
     </aside>
   );
