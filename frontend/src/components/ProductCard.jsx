@@ -1,7 +1,7 @@
 import { purchaseProduct } from "../utils/web3";
 import { parseEther } from "ethers";
 
-function ProductCard({ id, name, price, seller }) {
+function ProductCard({ id, name, price, seller, averageRating }) {
   const handleBuy = async () => {
     try {
       const priceValue = price.replace(" ETH", "");
@@ -9,12 +9,18 @@ function ProductCard({ id, name, price, seller }) {
 
       const result = await purchaseProduct(id, priceWei);
 
-      if (result.success) {
-        alert("Achat réussi !");
-        window.location.reload();
-      } else {
-        alert(result.error);
-      }
+if (result.success) {
+  const existing = JSON.parse(localStorage.getItem("orderTxHashes") || "{}");
+
+  existing[result.orderId] = result.txHash;
+
+  localStorage.setItem("orderTxHashes", JSON.stringify(existing));
+
+  alert("Achat réussi !");
+  window.location.reload();
+} else {
+  alert(result.error);
+}
     } catch (error) {
       console.error(error);
       alert("Erreur achat");
@@ -27,6 +33,7 @@ function ProductCard({ id, name, price, seller }) {
 
       <div className="product-info">
         <h3>{name}</h3>
+           <p>⭐ {averageRating || 0} / 5</p>
 
         <p className="seller">Vendeur: {seller}</p>
 
