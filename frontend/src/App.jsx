@@ -19,6 +19,7 @@ import {
 } from "./utils/web3";
 
 import { uploadJsonToIPFS } from "./utils/ipfs";
+import { saveProductMetadata } from "./utils/api";
 
 function App() {
   const [activePage, setActivePage] = useState("marketplace");
@@ -36,12 +37,14 @@ function App() {
   const [productImage, setProductImage] = useState("");
   const [productPrice, setProductPrice] = useState("");
   const [productStock, setProductStock] = useState("");
-  const [productIpfsHash, setProductIpfsHash] = useState("");
+  const [storeIpfsHash, setStoreIpfsHash] = useState("");
   const [selectedTxDetails, setSelectedTxDetails] = useState(null);
   const [selectedTxHash, setSelectedTxHash] = useState("");
   const [myStoreId, setMyStoreId] = useState(0);
   const [loadingStore, setLoadingStore] = useState(false);
   const [storeName, setStoreName] = useState("");
+  const [productCategory, setProductCategory] = useState("");
+  const [customCategory, setCustomCategory] = useState("");
   
 
   const connectWallet = async () => {
@@ -294,7 +297,7 @@ const openTransactionDetails = async (orderId) => {
 
         <h2>Ajouter un produit</h2>
 
-        <input
+  <input
   type="text"
   placeholder="Nom du produit"
   value={productName}
@@ -309,6 +312,35 @@ const openTransactionDetails = async (orderId) => {
   rows={4}
   style={{ display: "block", marginBottom: "10px", width: "100%" }}
 />
+
+<select
+  value={productCategory}
+  onChange={(e) => setProductCategory(e.target.value)}
+  style={{ display: "block", marginBottom: "10px", width: "100%" }}
+>
+  <option value="">Choisir une catégorie</option>
+
+  <option value="mode">Mode</option>
+  <option value="electronique">Électronique</option>
+  <option value="maison">Maison & Décoration</option>
+  <option value="sport">Sport & Loisirs</option>
+  <option value="beaute">Beauté & Santé</option>
+  <option value="automobile">Automobile</option>
+  <option value="jeux">Jeux & Gaming</option>
+  <option value="livres">Livres & Éducation</option>
+  <option value="alimentaire">Alimentaire</option>
+  <option value="autre">Autre</option>
+</select>
+
+{productCategory === "autre" && (
+  <input
+    type="text"
+    placeholder="Entrer une catégorie personnalisée"
+    value={customCategory}
+    onChange={(e) => setCustomCategory(e.target.value)}
+    style={{ display: "block", marginBottom: "10px", width: "100%" }}
+  />
+)}
 
 <input
   type="text"
@@ -336,31 +368,54 @@ const openTransactionDetails = async (orderId) => {
 />
 
         <button
-          onClick={async () => {
-  if (!productName.trim()) {
-    alert("Nom du produit invalide");
-    return;
-  }
+  onClick={async () => {
+    if (!productName.trim()) {
+      alert("Nom du produit invalide");
+      return;
+    }
 
-  if (!productDescription.trim()) {
-    alert("Description invalide");
-    return;
-  }
+    if (!productDescription.trim()) {
+      alert("Description invalide");
+      return;
+    }
 
-  if (!productImage.trim()) {
-    alert("Image invalide");
-    return;
-  }
+    if (!productCategory) {
+      alert("Veuillez choisir une catégorie");
+      return;
+    }
 
-  if (!productPrice || isNaN(productPrice)) {
-    alert("Prix invalide");
-    return;
-  }
+    if (productCategory === "autre") {
+      if (!customCategory.trim()) {
+        alert("Veuillez entrer une catégorie personnalisée");
+        return;
+      }
 
-  if (Number(productStock) <= 0) {
-    alert("Stock invalide");
-    return;
-  }
+      const regex = /^[A-Za-zÀ-ÿ\s]+$/;
+
+      if (!regex.test(customCategory)) {
+        alert("La catégorie doit contenir uniquement des lettres");
+        return;
+      }
+    }
+
+    if (!productImage.trim()) {
+      alert("Image invalide");
+      return;
+    }
+
+    if (!productPrice || isNaN(productPrice)) {
+      alert("Prix invalide");
+      return;
+    }
+
+    if (Number(productStock) <= 0) {
+      alert("Stock invalide");
+      return;
+    }
+const finalCategory =
+  productCategory === "autre" ? customCategory.trim() : productCategory;
+
+console.log("Catégorie finale :", finalCategory);
 
   // 1. Construire JSON produit
   const productMetadata = {
@@ -384,24 +439,39 @@ const openTransactionDetails = async (orderId) => {
 
   // 4. Envoyer au smart contract
   const result = await addProduct(
-    priceInWei.toString(),
-    productStock,
-    uploadResult.ipfsHash
-  );
+  priceInWei.toString(),
+  productStock,
+  uploadResult.ipfsHash
+);
 
-  if (result.success) {
-    alert("Produit ajouté !");
+if (result.success) {
+  console.log("Envoi au backend...");
 
-    setProductName("");
-    setProductDescription("");
-    setProductImage("");
-    setProductPrice("");
-    setProductStock("");
+  const backendResult = await saveProductMetadata({
+    contractProductId: result.productId || null,
+    sellerAddress: account,
+    name: productName,
+    description: productDescription,
+    category: finalCategory,
+    imageIpfsHash: uploadResult.ipfsHash,
+  });
 
-    await loadProducts();
-  } else {
-    alert(result.error);
-  }
+  console.log("Réponse backend :", backendResult);
+
+  alert("Produit ajouté !");
+
+  setProductName("");
+  setProductDescription("");
+  setProductImage("");
+  setProductPrice("");
+  setProductStock("");
+  setProductCategory("");
+  setCustomCategory("");
+
+  await loadProducts();
+} else {
+  alert(result.error);
+}
 }}
         >
           Ajouter le produit
