@@ -148,6 +148,7 @@ export const createStore = async (name, ipfsHash) => {
   }
 };
 // Ajouter un produit
+// Ajouter un produit
 export const addProduct = async (price, stock, ipfsHash) => {
   try {
     const contract = await getContract();
@@ -160,7 +161,12 @@ export const addProduct = async (price, stock, ipfsHash) => {
 
     await tx.wait();
 
-    return { success: true };
+    const productId = await contract.productCount();
+
+    return {
+      success: true,
+      productId: Number(productId),
+    };
   } catch (error) {
     console.error("Erreur addProduct:", error);
 

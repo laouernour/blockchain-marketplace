@@ -18,8 +18,8 @@ import {
   getMyStoreId,
 } from "./utils/web3";
 
-import { uploadJsonToIPFS } from "./utils/ipfs";
-import { saveProductMetadata } from "./utils/api";
+import { uploadFileToIPFS } from "./utils/ipfs";
+import { saveProductMetadata, getProductsMetadata } from "./utils/api";
 
 function App() {
   const [activePage, setActivePage] = useState("marketplace");
@@ -34,7 +34,8 @@ function App() {
   const [productReviews, setProductReviews] = useState([]);
   const [productName, setProductName] = useState("");
   const [productDescription, setProductDescription] = useState("");
-  const [productImage, setProductImage] = useState("");
+  const [productImageFile, setProductImageFile] = useState(null);
+  const [productImagePreview, setProductImagePreview] = useState("");
   const [productPrice, setProductPrice] = useState("");
   const [productStock, setProductStock] = useState("");
   const [storeIpfsHash, setStoreIpfsHash] = useState("");
@@ -45,6 +46,78 @@ function App() {
   const [storeName, setStoreName] = useState("");
   const [productCategory, setProductCategory] = useState("");
   const [customCategory, setCustomCategory] = useState("");
+
+     const formTitleStyle = {
+    textAlign: "center",
+    marginBottom: "20px",
+    color: "#ffffff",
+    fontSize: "28px",
+    fontWeight: "700",
+  };
+
+  const inputStyle = {
+    display: "block",
+    width: "100%",
+    padding: "12px 14px",
+    marginBottom: "14px",
+    borderRadius: "10px",
+    border: "1px solid #374151",
+    backgroundColor: "#f9fafb",
+    fontSize: "16px",
+    boxSizing: "border-box",
+    outline: "none",
+  };
+
+  const textareaStyle = {
+    ...inputStyle,
+    minHeight: "110px",
+    resize: "vertical",
+  };
+
+  const selectStyle = {
+    ...inputStyle,
+    cursor: "pointer",
+  };
+
+  const labelStyle = {
+    display: "block",
+    marginBottom: "6px",
+    color: "#e5e7eb",
+    fontWeight: "600",
+    fontSize: "15px",
+  };
+
+  const buttonStyle = {
+    width: "100%",
+    padding: "14px",
+    border: "none",
+    borderRadius: "10px",
+    background: "#2563eb",
+    color: "#fff",
+    fontSize: "16px",
+    fontWeight: "bold",
+    cursor: "pointer",
+    marginTop: "10px",
+  };
+
+  const fileBoxStyle = {
+    border: "2px dashed #4b5563",
+    borderRadius: "12px",
+    padding: "16px",
+    marginBottom: "14px",
+    background: "#1f2937",
+  };
+
+  const previewImageStyle = {
+    width: "200px",
+    height: "200px",
+    objectFit: "cover",
+    borderRadius: "10px",
+    marginTop: "10px",
+    marginBottom: "10px",
+    display: "block",
+    border: "2px solid #374151",
+  };
   
 
   const connectWallet = async () => {
@@ -58,20 +131,37 @@ function App() {
   try {
     setLoadingProducts(true);
 
-    const data = await getAllProducts();
+    const blockchainProducts = await getAllProducts();
+    const sqlResult = await getProductsMetadata();
 
-    const productsWithMetadata = await Promise.all(
-      data.map(async (product) => {
-        const metadata = await getIpfsJson(product.ipfsHash);
+    if (!sqlResult.success) {
+      console.error("Erreur SQL :", sqlResult.error);
+      setProducts(blockchainProducts);
+      return;
+    }
 
-        return {
-          ...product,
-          metadata,
-        };
-      })
-    );
+    const sqlProducts = sqlResult.data || [];
 
-    setProducts(productsWithMetadata);
+    const mergedProducts = blockchainProducts.map((product) => {
+      const sqlMatch = sqlProducts.find(
+        (sqlProduct) =>
+          Number(sqlProduct.contract_product_id) === Number(product.id)
+      );
+
+      return {
+        ...product,
+        metadata: sqlMatch
+          ? {
+              name: sqlMatch.name,
+              description: sqlMatch.description,
+              category: sqlMatch.category,
+              image: sqlMatch.image_ipfs_hash,
+            }
+          : null,
+      };
+    });
+
+    setProducts(mergedProducts);
   } catch (error) {
     console.error("Erreur loadProducts:", error);
     setProducts([]);
@@ -246,233 +336,277 @@ const openTransactionDetails = async (orderId) => {
       <div>
         <h2>Créer une boutique</h2>
         <p>Vous n’avez pas encore de boutique.</p>
+
         <input
           type="text"
           placeholder="Nom de la boutique"
           value={storeName}
           onChange={(e) => setStoreName(e.target.value)}
           style={{ display: "block", marginBottom: "10px", width: "100%" }}
-       />
+        />
 
-<input
-  type="text"
-  placeholder="IPFS Hash de la boutique"
-  value={storeIpfsHash}
-  onChange={(e) => setStoreIpfsHash(e.target.value)}
-  style={{ display: "block", marginBottom: "10px", width: "100%" }}
-/>
+        <input
+          type="text"
+          placeholder="IPFS Hash de la boutique"
+          value={storeIpfsHash}
+          onChange={(e) => setStoreIpfsHash(e.target.value)}
+          style={{ display: "block", marginBottom: "10px", width: "100%" }}
+        />
 
         <button
           onClick={async () => {
-  if (!storeName.trim()) {
-    alert("Nom de boutique invalide");
-    return;
-  }
+            if (!storeName.trim()) {
+              alert("Nom de boutique invalide");
+              return;
+            }
 
-  if (!storeIpfsHash.trim()) {
-    alert("IPFS Hash invalide");
-    return;
-  }
+            if (!storeIpfsHash.trim()) {
+              alert("IPFS Hash invalide");
+              return;
+            }
 
-  const result = await createStore(storeName, storeIpfsHash);
+            const result = await createStore(storeName, storeIpfsHash);
 
-  if (result.success) {
-    alert("Boutique créée !");
-    setStoreName("");
-    setStoreIpfsHash("");
-    await loadMyStore();
-  } else {
-    alert(result.error);
-  }
-}}
+            if (result.success) {
+              alert("Boutique créée !");
+              setStoreName("");
+              setStoreIpfsHash("");
+              await loadMyStore();
+            } else {
+              alert(result.error);
+            }
+          }}
         >
           Créer ma boutique
         </button>
       </div>
     ) : (
       <div>
-        <p>Votre boutique existe déjà (ID : {myStoreId})</p>
+        <p
+          style={{
+            textAlign: "center",
+            color: "#d1d5db",
+            fontSize: "22px",
+            marginBottom: "10px",
+          }}
+        >
+          Votre boutique existe déjà (ID : {myStoreId})
+        </p>
 
-        <hr style={{ margin: "20px 0" }} />
+        <hr style={{ margin: "20px 0", borderColor: "#374151" }} />
 
-        <h2>Ajouter un produit</h2>
+        <h2 style={formTitleStyle}>Ajouter un produit</h2>
 
-  <input
-  type="text"
-  placeholder="Nom du produit"
-  value={productName}
-  onChange={(e) => setProductName(e.target.value)}
-  style={{ display: "block", marginBottom: "10px", width: "100%" }}
-/>
+        <input
+          type="text"
+          placeholder="Nom du produit"
+          value={productName}
+          onChange={(e) => setProductName(e.target.value)}
+          style={inputStyle}
+        />
 
-<textarea
-  placeholder="Description du produit"
-  value={productDescription}
-  onChange={(e) => setProductDescription(e.target.value)}
-  rows={4}
-  style={{ display: "block", marginBottom: "10px", width: "100%" }}
-/>
+        <textarea
+          placeholder="Description du produit"
+          value={productDescription}
+          onChange={(e) => setProductDescription(e.target.value)}
+          rows={4}
+          style={textareaStyle}
+        />
 
-<select
-  value={productCategory}
-  onChange={(e) => setProductCategory(e.target.value)}
-  style={{ display: "block", marginBottom: "10px", width: "100%" }}
->
-  <option value="">Choisir une catégorie</option>
+        <select
+          value={productCategory}
+          onChange={(e) => setProductCategory(e.target.value)}
+          style={selectStyle}
+        >
+          <option value="">Choisir une catégorie</option>
+          <option value="mode">Mode</option>
+          <option value="electronique">Électronique</option>
+          <option value="maison">Maison & Décoration</option>
+          <option value="sport">Sport & Loisirs</option>
+          <option value="beaute">Beauté & Santé</option>
+          <option value="automobile">Automobile</option>
+          <option value="jeux">Jeux & Gaming</option>
+          <option value="livres">Livres & Éducation</option>
+          <option value="alimentaire">Alimentaire</option>
+          <option value="autre">Autre</option>
+        </select>
 
-  <option value="mode">Mode</option>
-  <option value="electronique">Électronique</option>
-  <option value="maison">Maison & Décoration</option>
-  <option value="sport">Sport & Loisirs</option>
-  <option value="beaute">Beauté & Santé</option>
-  <option value="automobile">Automobile</option>
-  <option value="jeux">Jeux & Gaming</option>
-  <option value="livres">Livres & Éducation</option>
-  <option value="alimentaire">Alimentaire</option>
-  <option value="autre">Autre</option>
-</select>
+        {productCategory === "autre" && (
+          <input
+            type="text"
+            placeholder="Entrer une catégorie personnalisée"
+            value={customCategory}
+            onChange={(e) => setCustomCategory(e.target.value)}
+            style={inputStyle}
+          />
+        )}
 
-{productCategory === "autre" && (
-  <input
-    type="text"
-    placeholder="Entrer une catégorie personnalisée"
-    value={customCategory}
-    onChange={(e) => setCustomCategory(e.target.value)}
-    style={{ display: "block", marginBottom: "10px", width: "100%" }}
-  />
-)}
+        <div style={fileBoxStyle}>
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/jpg,image/webp"
+            onChange={(e) => {
+              const file = e.target.files?.[0] || null;
+              setProductImageFile(file);
 
-<input
-  type="text"
-  placeholder="Image URL"
-  value={productImage}
-  onChange={(e) => setProductImage(e.target.value)}
-  style={{ display: "block", marginBottom: "10px", width: "100%" }}
-/>
+              if (file) {
+                setProductImagePreview(URL.createObjectURL(file));
+              } else {
+                setProductImagePreview("");
+              }
+            }}
+            style={{
+              display: "block",
+              marginBottom: "10px",
+              width: "100%",
+              color: "#fff",
+            }}
+          />
 
-<input
-  type="text"
-  placeholder="Prix en ETH (ex: 0.01)"
-  value={productPrice}
-  onChange={(e) => setProductPrice(e.target.value)}
-  style={{ display: "block", marginBottom: "10px", width: "100%" }}
-/>
+          {!productImageFile && (
+            <p style={{ color: "#fca5a5", margin: 0, fontSize: "14px" }}>
+              Veuillez sélectionner une image
+            </p>
+          )}
 
-<input
-  type="number"
-  min="1"
-  placeholder="Stock"
-  value={productStock}
-  onChange={(e) => setProductStock(e.target.value)}
-  style={{ display: "block", marginBottom: "10px", width: "100%" }}
-/>
+          {productImagePreview && (
+            <img
+              src={productImagePreview}
+              alt="Prévisualisation"
+              style={previewImageStyle}
+            />
+          )}
+        </div>
+
+        <input
+          type="text"
+          placeholder="Prix en ETH (ex: 0.01)"
+          value={productPrice}
+          onChange={(e) => setProductPrice(e.target.value)}
+          style={inputStyle}
+        />
+
+        <input
+          type="number"
+          min="1"
+          placeholder="Stock"
+          value={productStock}
+          onChange={(e) => setProductStock(e.target.value)}
+          style={inputStyle}
+        />
 
         <button
-  onClick={async () => {
-    if (!productName.trim()) {
-      alert("Nom du produit invalide");
-      return;
-    }
+          onClick={async () => {
+            if (!productName.trim()) {
+              alert("Nom du produit invalide");
+              return;
+            }
 
-    if (!productDescription.trim()) {
-      alert("Description invalide");
-      return;
-    }
+            if (!productDescription.trim()) {
+              alert("Description invalide");
+              return;
+            }
 
-    if (!productCategory) {
-      alert("Veuillez choisir une catégorie");
-      return;
-    }
+            if (!productCategory) {
+              alert("Veuillez choisir une catégorie");
+              return;
+            }
 
-    if (productCategory === "autre") {
-      if (!customCategory.trim()) {
-        alert("Veuillez entrer une catégorie personnalisée");
-        return;
-      }
+            if (productCategory === "autre") {
+              if (!customCategory.trim()) {
+                alert("Veuillez entrer une catégorie personnalisée");
+                return;
+              }
 
-      const regex = /^[A-Za-zÀ-ÿ\s]+$/;
+              const regex = /^[A-Za-zÀ-ÿ\s]+$/;
 
-      if (!regex.test(customCategory)) {
-        alert("La catégorie doit contenir uniquement des lettres");
-        return;
-      }
-    }
+              if (!regex.test(customCategory)) {
+                alert("La catégorie doit contenir uniquement des lettres");
+                return;
+              }
+            }
 
-    if (!productImage.trim()) {
-      alert("Image invalide");
-      return;
-    }
+            if (!productImageFile) {
+              alert("Veuillez sélectionner une image");
+              return;
+            }
 
-    if (!productPrice || isNaN(productPrice)) {
-      alert("Prix invalide");
-      return;
-    }
+            if (!productPrice || isNaN(productPrice)) {
+              alert("Prix invalide");
+              return;
+            }
 
-    if (Number(productStock) <= 0) {
-      alert("Stock invalide");
-      return;
-    }
-const finalCategory =
-  productCategory === "autre" ? customCategory.trim() : productCategory;
+            if (Number(productStock) <= 0) {
+              alert("Stock invalide");
+              return;
+            }
 
-console.log("Catégorie finale :", finalCategory);
+            const finalCategory =
+              productCategory === "autre" ? customCategory.trim() : productCategory;
 
-  // 1. Construire JSON produit
-  const productMetadata = {
-    name: productName,
-    description: productDescription,
-    image: productImage,
-  };
+            console.log("Catégorie finale :", finalCategory);
 
-  // 2. Upload IPFS
-  const uploadResult = await uploadJsonToIPFS(productMetadata);
+            const uploadResult = await uploadFileToIPFS(productImageFile);
 
-  if (!uploadResult.success) {
-    alert(uploadResult.error || "Erreur upload IPFS");
-    return;
-  }
+            if (!uploadResult.success) {
+              alert(uploadResult.error || "Erreur upload image IPFS");
+              return;
+            }
 
-  console.log("IPFS HASH:", uploadResult.ipfsHash);
+            console.log("IPFS HASH IMAGE :", uploadResult.ipfsHash);
 
-  // 3. Convertir prix
-  const priceInWei = parseEther(productPrice);
+            const priceInWei = parseEther(productPrice);
 
-  // 4. Envoyer au smart contract
-  const result = await addProduct(
-  priceInWei.toString(),
-  productStock,
-  uploadResult.ipfsHash
-);
+            const result = await addProduct(
+              priceInWei.toString(),
+              productStock,
+              uploadResult.ipfsHash
+            );
 
-if (result.success) {
-  console.log("Envoi au backend...");
+            console.log("Résultat addProduct complet :", result);
 
-  const backendResult = await saveProductMetadata({
-    contractProductId: result.productId || null,
-    sellerAddress: account,
-    name: productName,
-    description: productDescription,
-    category: finalCategory,
-    imageIpfsHash: uploadResult.ipfsHash,
-  });
+            if (result.success) {
+              console.log("Envoi au backend...");
 
-  console.log("Réponse backend :", backendResult);
+              const backendResult = await saveProductMetadata({
+                contractProductId: result.productId || null,
+                sellerAddress: account,
+                name: productName,
+                description: productDescription,
+                category: finalCategory,
+                imageIpfsHash: uploadResult.ipfsHash,
+              });
 
-  alert("Produit ajouté !");
+              console.log("Réponse backend :", backendResult);
 
-  setProductName("");
-  setProductDescription("");
-  setProductImage("");
-  setProductPrice("");
-  setProductStock("");
-  setProductCategory("");
-  setCustomCategory("");
+              if (!backendResult.success) {
+                alert("Erreur backend: " + backendResult.error);
+                return;
+              }
 
-  await loadProducts();
-} else {
-  alert(result.error);
-}
-}}
+              alert("Produit ajouté !");
+
+              setProductName("");
+              setProductDescription("");
+              setProductImageFile(null);
+              setProductImagePreview("");
+              setProductPrice("");
+              setProductStock("");
+              setProductCategory("");
+              setCustomCategory("");
+
+              await loadProducts();
+            } else {
+              alert(result.error);
+            }
+          }}
+          disabled={!productImageFile}
+          style={{
+            ...buttonStyle,
+            background: !productImageFile ? "#6b7280" : "#2563eb",
+            cursor: !productImageFile ? "not-allowed" : "pointer",
+            opacity: !productImageFile ? 0.85 : 1,
+          }}
         >
           Ajouter le produit
         </button>

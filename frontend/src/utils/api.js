@@ -21,3 +21,22 @@ export const saveProductMetadata = async (productData) => {
     };
   }
 };
+export const getProductsMetadata = async () => {
+  try {
+    const response = await fetch("http://localhost:5000/products");
+
+    if (!response.ok) {
+      throw new Error("Erreur lors de la récupération des produits SQL");
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error("Erreur getProductsMetadata:", error);
+    return {
+      success: false,
+      error: error.message,
+      data: [],
+    };
+  }
+};
