@@ -410,3 +410,34 @@ export const getTransactionDetails = async (txHash) => {
     return null;
   }
 };
+
+// Ajouter une fonction paginée
+export const getProductsPaginated = async (page = 1, limit = 10) => {
+  try {
+    const contract = await getContract();
+    const total = await contract.productCount();
+    const start = (page - 1) * limit + 1;
+    const end = Math.min(start + limit - 1, Number(total));
+    const products = [];
+
+    for (let i = start; i <= end; i++) {
+      const p = await contract.products(i);
+      if (p.exists) {
+        const avgRating = await contract.getAverageRating(i);
+        products.push({
+          id: Number(p.id),
+          seller: p.seller,
+          price: formatEther(p.price),
+          stock: Number(p.stock),
+          ipfsHash: p.ipfsHash,
+          averageRating: Number(avgRating),
+        });
+      }
+    }
+
+    return { products, total: Number(total), page, limit };
+  } catch (error) {
+    console.error("Erreur chargement produits paginés:", error);
+    return { products: [], total: 0, page, limit };
+  }
+};

@@ -4,7 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "node": "hardhat node",
+    "save": "node scripts/save-state.js",
+    "load": "node scripts/load-state.js"
   },
   "keywords": [],
   "author": "",
