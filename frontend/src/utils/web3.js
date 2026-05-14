@@ -2,6 +2,31 @@ import { BrowserProvider, Contract, formatEther } from "ethers";
 import MarketplaceABI from "../abi/Marketplace.json";
 import { CONTRACT_ADDRESS } from "../config";
 
+function extractError(error) {
+  const reason = error?.reason || error?.revert?.args?.[0] || error?.info?.error?.message;
+  if (reason) return reason;
+  const msg = error?.shortMessage || error?.message || "";
+  if (msg.includes("user rejected") || msg.includes("User denied")) return "Transaction annulée";
+  if (msg.includes("missing revert data")) return "Transaction refusée";
+  if (msg.includes("Internal JSON-RPC")) return "Transaction refusée";
+  if (msg.includes("insufficient funds")) return "Fonds insuffisants";
+  if (msg.includes("network")) return "Problème de réseau — vérifie que Hardhat est lancé";
+  return msg || "Erreur inconnue";
+}
+
+// Signer un message avec MetaMask
+export const signMessage = async (message) => {
+  try {
+    const provider = new BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const signature = await signer.signMessage(message);
+    return { success: true, signature };
+  } catch (error) {
+    console.error("Erreur signMessage:", error);
+    return { success: false, error: error.message };
+  }
+};
+
 // Connexion wallet
 export const connectWallet = async () => {
   if (!window.ethereum) {
@@ -52,7 +77,18 @@ export const checkWalletConnection = async () => {
 };
 
 // Récupérer contrat
-export const getContract = async () => {
+export const getSignerAddress = async () => {
+  if (!window.ethereum) return null;
+  try {
+    const provider = new BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    return await signer.getAddress();
+  } catch {
+    return null;
+  }
+};
+
+export const getContract = async (expectedAddress = null) => {
   if (!window.ethereum) {
     throw new Error("MetaMask non installé");
   }
@@ -60,13 +96,22 @@ export const getContract = async () => {
   const provider = new BrowserProvider(window.ethereum);
   const signer = await provider.getSigner();
 
+  if (expectedAddress) {
+    const actual = await signer.getAddress();
+    if (actual.toLowerCase() !== expectedAddress.toLowerCase()) {
+      throw new Error("ACCOUNT_MISMATCH");
+    }
+  }
+
   return new Contract(CONTRACT_ADDRESS, MarketplaceABI.abi, signer);
 };
 
-// Charger produits
+// Charger produits (lecture seule, sans signer requis)
 export const getAllProducts = async () => {
   try {
-    const contract = await getContract();
+    if (!window.ethereum) return [];
+    const provider = new BrowserProvider(window.ethereum);
+    const contract = new Contract(CONTRACT_ADDRESS, MarketplaceABI.abi, provider);
     const count = await contract.productCount();
     const products = [];
 
@@ -74,17 +119,16 @@ export const getAllProducts = async () => {
       const p = await contract.products(i);
 
       if (p.exists) {
-  const avgRating = await contract.getAverageRating(i);
-
-  products.push({
-    id: Number(p.id),
-    seller: p.seller,
-    price: formatEther(p.price),
-    stock: Number(p.stock),
-    ipfsHash: p.ipfsHash,
-    averageRating: Number(avgRating),
-  });
-}
+        const avgRating = await contract.getAverageRating(i);
+        products.push({
+          id: Number(p.id),
+          seller: p.seller,
+          price: formatEther(p.price),
+          stock: Number(p.stock),
+          ipfsHash: p.ipfsHash,
+          averageRating: Number(avgRating),
+        });
+      }
     }
 
     return products;
@@ -97,11 +141,10 @@ export const getAllProducts = async () => {
 // Vérifier si le wallet a déjà une boutique
 export const getMyStoreId = async () => {
   try {
-    const contract = await getContract();
     const provider = new BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
+    const contract = new Contract(CONTRACT_ADDRESS, MarketplaceABI.abi, signer);
     const address = await signer.getAddress();
-
     const storeId = await contract.storeOfOwner(address);
     return Number(storeId);
   } catch (error) {
@@ -113,9 +156,9 @@ export const getMyStoreId = async () => {
 // Créer boutique
 export const createStore = async (name, ipfsHash) => {
   try {
-    const contract = await getContract();
     const provider = new BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
+    const contract = new Contract(CONTRACT_ADDRESS, MarketplaceABI.abi, signer);
     const address = await signer.getAddress();
 
     const existingStoreId = await contract.storeOfOwner(address);
@@ -136,102 +179,54 @@ export const createStore = async (name, ipfsHash) => {
     };
   } catch (error) {
     console.error("Erreur createStore:", error);
-
-    return {
-      success: false,
-      error:
-        error?.reason ||
-        error?.shortMessage ||
-        error?.message ||
-        "Erreur inconnue",
-    };
+    return { success: false, error: extractError(error) };
   }
 };
+
 // Ajouter un produit
-// Ajouter un produit
-export const addProduct = async (price, stock, ipfsHash) => {
+export const addProduct = async (price, stock, ipfsHash, expectedAddress = null) => {
   try {
-    const contract = await getContract();
-
-    const tx = await contract.addProduct(
-      BigInt(price),
-      BigInt(stock),
-      ipfsHash
-    );
-
+    const contract = await getContract(expectedAddress);
+    const tx = await contract.addProduct(BigInt(price), BigInt(stock), ipfsHash);
     await tx.wait();
-
     const productId = await contract.productCount();
-
-    return {
-      success: true,
-      productId: Number(productId),
-    };
+    return { success: true, productId: Number(productId) };
   } catch (error) {
     console.error("Erreur addProduct:", error);
-
-    return {
-      success: false,
-      error:
-        error?.reason ||
-        error?.shortMessage ||
-        error?.message ||
-        "Erreur inconnue",
-    };
+    if (error.message === "ACCOUNT_MISMATCH") {
+      return { success: false, error: "Compte MetaMask changé — déconnecte et reconnecte ton wallet" };
+    }
+    return { success: false, error: extractError(error) };
   }
 };
+
 // Acheter un produit
-export const purchaseProduct = async (productId, priceWei) => {
+export const purchaseProduct = async (productId, priceWei, expectedAddress = null) => {
   try {
-    const contract = await getContract();
-
-    const tx = await contract.purchase(productId, {
-      value: BigInt(priceWei),
-    });
-
+    const contract = await getContract(expectedAddress);
+    const tx = await contract.purchase(productId, { value: BigInt(priceWei) });
     await tx.wait();
-
     const orderCount = await contract.orderCount();
-
-    return {
-      success: true,
-      txHash: tx.hash,
-      orderId: Number(orderCount),
-    };
+    return { success: true, txHash: tx.hash, orderId: Number(orderCount) };
   } catch (error) {
     console.error("Erreur purchaseProduct:", error);
-
-    return {
-      success: false,
-      error:
-        error?.reason ||
-        error?.shortMessage ||
-        error?.message ||
-        "Erreur inconnue",
-    };
+    if (error.message === "ACCOUNT_MISMATCH") {
+      return { success: false, error: "Compte MetaMask changé — déconnecte et reconnecte ton wallet" };
+    }
+    return { success: false, error: extractError(error) };
   }
 };
+
 // Confirmer la livraison
 export const confirmDelivery = async (orderId) => {
   try {
     const contract = await getContract();
-
     const tx = await contract.confirmDelivery(orderId);
-
     await tx.wait();
-
     return { success: true };
   } catch (error) {
     console.error("Erreur confirmDelivery:", error);
-
-    return {
-      success: false,
-      error:
-        error?.reason ||
-        error?.shortMessage ||
-        error?.message ||
-        "Erreur inconnue",
-    };
+    return { success: false, error: extractError(error) };
   }
 };
 // Lire une commande
@@ -267,6 +262,69 @@ export const getOrderCount = async () => {
   }
 };
 
+function parseOrder(o) {
+  return {
+    id: Number(o.id),
+    productId: Number(o.productId),
+    buyer: o.buyer,
+    amount: o.amount.toString(),
+    delivered: o.delivered,
+    released: o.released,
+    disputed: o.disputed,
+    disputeResolved: o.disputeResolved,
+    buyerWon: o.buyerWon,
+    deliveryTimestamp: Number(o.deliveryTimestamp),
+    disputeIpfsHash: o.disputeIpfsHash || "",
+    exists: o.exists,
+  };
+}
+
+// Charger les commandes d'un vendeur
+export const getSellerOrders = async (sellerAddress) => {
+  try {
+    if (!window.ethereum) return [];
+    const provider = new BrowserProvider(window.ethereum);
+    const contract = new Contract(CONTRACT_ADDRESS, MarketplaceABI.abi, provider);
+    const orderIds = await contract.getOrderIdsBySeller(sellerAddress);
+    const orders = [];
+    for (const id of orderIds) {
+      const o = await contract.orders(id);
+      if (o.exists) orders.push(parseOrder(o));
+    }
+    return orders;
+  } catch (error) {
+    console.error("Erreur getSellerOrders:", error);
+    return [];
+  }
+};
+
+// Demander un remboursement (après 7 jours sans livraison)
+export const claimRefund = async (orderId) => {
+  try {
+    const contract = await getContract();
+    const tx = await contract.claimRefund(BigInt(orderId));
+    await tx.wait();
+    return { success: true };
+  } catch (error) {
+    console.error("Erreur claimRefund:", error);
+    return { success: false, error: extractError(error) };
+  }
+};
+
+// Lire le timestamp d'une commande
+export const getOrderTimestamp = async (orderId) => {
+  try {
+    if (!window.ethereum) return 0;
+    const provider = new BrowserProvider(window.ethereum);
+    const contract = new Contract(CONTRACT_ADDRESS, MarketplaceABI.abi, provider);
+    const ts = await contract.orderTimestamp(BigInt(orderId));
+    return Number(ts);
+  } catch (error) {
+    console.error("Erreur getOrderTimestamp:", error);
+    return 0;
+  }
+};
+
 // Charger toutes les commandes
 export const getAllOrders = async () => {
   try {
@@ -287,6 +345,76 @@ export const getAllOrders = async () => {
     return [];
   }
 };
+
+// Charger les commandes d'un acheteur (personnalisé par compte)
+export const getBuyerOrders = async (buyerAddress) => {
+  try {
+    if (!buyerAddress || !window.ethereum) return [];
+    const provider = new BrowserProvider(window.ethereum);
+    const contract = new Contract(CONTRACT_ADDRESS, MarketplaceABI.abi, provider);
+    const orderIds = await contract.getOrderIdsByBuyer(buyerAddress);
+    const orders = [];
+    for (const id of orderIds) {
+      const o = await contract.orders(id);
+      if (o.exists) orders.push(parseOrder(o));
+    }
+    return orders;
+  } catch (error) {
+    console.error("Erreur getBuyerOrders:", error);
+    return [];
+  }
+};
+
+// Ouvrir un litige (acheteur, dans les 48h après confirmation)
+export const openDispute = async (orderId, ipfsHash = "") => {
+  try {
+    const contract = await getContract();
+    const tx = await contract.openDispute(BigInt(orderId), ipfsHash);
+    await tx.wait();
+    return { success: true };
+  } catch (error) {
+    console.error("Erreur openDispute:", error);
+    return { success: false, error: extractError(error) };
+  }
+};
+
+// Libérer les fonds (après 48h sans litige)
+export const releaseFunds = async (orderId) => {
+  try {
+    const contract = await getContract();
+    const tx = await contract.releaseFunds(BigInt(orderId));
+    await tx.wait();
+    return { success: true };
+  } catch (error) {
+    console.error("Erreur releaseFunds:", error);
+    return { success: false, error: extractError(error) };
+  }
+};
+
+// Résoudre un litige — admin uniquement
+export const resolveDispute = async (orderId, favorBuyer) => {
+  try {
+    const contract = await getContract();
+    const tx = await contract.resolveDispute(BigInt(orderId), favorBuyer);
+    await tx.wait();
+    return { success: true };
+  } catch (error) {
+    console.error("Erreur resolveDispute:", error);
+    return { success: false, error: extractError(error) };
+  }
+};
+
+// Lire l'adresse admin du contrat
+export const getAdminAddress = async () => {
+  try {
+    if (!window.ethereum) return null;
+    const provider = new BrowserProvider(window.ethereum);
+    const contract = new Contract(CONTRACT_ADDRESS, MarketplaceABI.abi, provider);
+    return await contract.admin();
+  } catch (error) {
+    return null;
+  }
+};
 // Ajouter un avis
 export const submitReview = async (orderId, rating, ipfsHash) => {
   try {
@@ -304,14 +432,7 @@ export const submitReview = async (orderId, rating, ipfsHash) => {
   } catch (error) {
     console.error("Erreur submitReview:", error);
 
-    return {
-      success: false,
-      error:
-        error?.reason ||
-        error?.shortMessage ||
-        error?.message ||
-        "Erreur inconnue",
-    };
+    return { success: false, error: extractError(error) };
   }
 };
 // Nombre d'avis d'un produit
@@ -408,36 +529,5 @@ export const getTransactionDetails = async (txHash) => {
   } catch (error) {
     console.error("Erreur getTransactionDetails:", error);
     return null;
-  }
-};
-
-// Ajouter une fonction paginée
-export const getProductsPaginated = async (page = 1, limit = 10) => {
-  try {
-    const contract = await getContract();
-    const total = await contract.productCount();
-    const start = (page - 1) * limit + 1;
-    const end = Math.min(start + limit - 1, Number(total));
-    const products = [];
-
-    for (let i = start; i <= end; i++) {
-      const p = await contract.products(i);
-      if (p.exists) {
-        const avgRating = await contract.getAverageRating(i);
-        products.push({
-          id: Number(p.id),
-          seller: p.seller,
-          price: formatEther(p.price),
-          stock: Number(p.stock),
-          ipfsHash: p.ipfsHash,
-          averageRating: Number(avgRating),
-        });
-      }
-    }
-
-    return { products, total: Number(total), page, limit };
-  } catch (error) {
-    console.error("Erreur chargement produits paginés:", error);
-    return { products: [], total: 0, page, limit };
   }
 };
