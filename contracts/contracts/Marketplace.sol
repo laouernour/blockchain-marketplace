@@ -33,6 +33,7 @@ contract Marketplace {
         uint256 id;
         uint256 productId;
         address buyer;
+        address deliverer;
         uint256 amount;
         bool delivered;
         bool released;
@@ -64,6 +65,8 @@ contract Marketplace {
     mapping(uint256 => uint256)   public orderTimestamp;
     mapping(address => uint256[]) public orderIdsByBuyer;
     mapping(address => uint256[]) public orderIdsBySeller;
+    mapping(address => uint256[]) public orderIdsByDeliverer;
+    mapping(address => bool)     public isDeliverer;
 
     mapping(uint256 => Review[]) public reviewsByProduct;
     mapping(uint256 => bool)     public reviewedOrder;
@@ -77,6 +80,7 @@ contract Marketplace {
     event DeliveryConfirmed(uint256 indexed orderId, uint256 indexed productId, address indexed buyer);
     event FundsReleased(uint256 indexed orderId, address indexed seller, uint256 amount);
     event RefundClaimed(uint256 indexed orderId, address indexed buyer, uint256 amount);
+    event DelivererAssigned(uint256 indexed orderId, address indexed deliverer);
     event DisputeOpened(uint256 indexed orderId, address indexed buyer, string ipfsHash);
     event DisputeResolved(uint256 indexed orderId, bool favorBuyer);
     event ReviewSubmitted(uint256 indexed reviewId, uint256 indexed productId, address indexed reviewer, uint8 rating, string ipfsHash);
@@ -100,6 +104,7 @@ contract Marketplace {
     function createStore(string calldata _name, string calldata _ipfsHash) external {
         require(bytes(_name).length > 0, "Store name required");
         require(storeOfOwner[msg.sender] == 0, "Store already exists");
+        require(!isDeliverer[msg.sender], "Deliverers cannot create stores");
 
         storeCount++;
         stores[storeCount] = Store({ id: storeCount, owner: msg.sender, name: _name, ipfsHash: _ipfsHash, exists: true });
@@ -140,6 +145,7 @@ contract Marketplace {
         require(p.stock > 0, "Out of stock");
         require(msg.value == p.price, "Incorrect price");
         require(msg.sender != p.seller, "Seller cannot buy own product");
+        require(!isDeliverer[msg.sender], "Deliverers cannot buy products");
 
         p.stock--;
         orderCount++;
@@ -148,6 +154,7 @@ contract Marketplace {
             id: orderCount,
             productId: _productId,
             buyer: msg.sender,
+            deliverer: address(0),
             amount: msg.value,
             delivered: false,
             released: false,
@@ -166,19 +173,40 @@ contract Marketplace {
         emit OrderCreated(orderCount, _productId, msg.sender, msg.value);
     }
 
-    // ─── Confirmation livraison (fonds retenus 48h) ───────────────────────────
+    // ─── Assigner un livreur (vendeur uniquement) ─────────────────────────────
+
+    function assignDeliverer(uint256 _orderId, address _deliverer) external {
+        Order storage o = orders[_orderId];
+        Product storage p = products[o.productId];
+
+        require(o.exists, "Order not found");
+        require(msg.sender == p.seller, "Only seller can assign deliverer");
+        require(!o.delivered, "Already delivered");
+        require(!o.released, "Funds already released");
+        require(_deliverer != address(0), "Invalid deliverer address");
+        require(_deliverer != o.buyer, "Buyer cannot be deliverer");
+        require(_deliverer != p.seller, "Seller cannot be deliverer");
+
+        o.deliverer = _deliverer;
+        orderIdsByDeliverer[_deliverer].push(_orderId);
+        isDeliverer[_deliverer] = true;
+
+        emit DelivererAssigned(_orderId, _deliverer);
+    }
+
+    // ─── Confirmation livraison (livreur uniquement) ──────────────────────────
 
     function confirmDelivery(uint256 _orderId) external {
         Order storage o = orders[_orderId];
 
         require(o.exists, "Order not found");
-        require(msg.sender == o.buyer, "Only buyer can confirm");
+        require(o.deliverer != address(0), "No deliverer assigned yet");
+        require(msg.sender == o.deliverer, "Only assigned deliverer can confirm");
         require(!o.delivered, "Already confirmed");
         require(!o.released, "Funds already released");
 
         o.delivered = true;
         o.deliveryTimestamp = block.timestamp;
-        // Les fonds restent bloqués 48h pour permettre un litige
 
         emit DeliveryConfirmed(_orderId, o.productId, msg.sender);
     }
@@ -340,6 +368,10 @@ contract Marketplace {
 
     function getOrderIdsBySeller(address _seller) external view returns (uint256[] memory) {
         return orderIdsBySeller[_seller];
+    }
+
+    function getOrderIdsByDeliverer(address _deliverer) external view returns (uint256[] memory) {
+        return orderIdsByDeliverer[_deliverer];
     }
 
     function getProductIdsByStore(uint256 _storeId) external view returns (uint256[] memory) {

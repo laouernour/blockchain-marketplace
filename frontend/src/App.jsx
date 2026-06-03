@@ -23,9 +23,27 @@ import {
   releaseFunds,
   resolveDispute,
   getAdminAddress,
+  assignDeliverer,
+  getDelivererOrders,
+  getTransactionHistory,
+  getBlockchainData,
+  checkIsDeliverer,
 } from "./utils/web3";
 import { uploadFileToIPFS, uploadJsonToIPFS } from "./utils/ipfs";
-import { saveProductMetadata, getProductsMetadata, getNonce, verifySignature } from "./utils/api";
+import { saveProductMetadata, getProductsMetadata, getNonce, verifySignature, registerAsDeliverer, getDelivererCandidates } from "./utils/api";
+
+const EVENT_META = {
+  OrderCreated:       { label: "Achat",              icon: "bi-cart-check",            color: "#4f8cff" },
+  DelivererAssigned:  { label: "Livreur assigné",    icon: "bi-person-check",           color: "#fbbf24" },
+  DeliveryConfirmed:  { label: "Livraison confirmée",icon: "bi-truck",                  color: "#33d6a6" },
+  FundsReleased:      { label: "Fonds libérés",      icon: "bi-check-circle",           color: "#22c55e" },
+  RefundClaimed:      { label: "Remboursement",      icon: "bi-arrow-counterclockwise", color: "#fb7185" },
+  DisputeOpened:      { label: "Litige ouvert",      icon: "bi-exclamation-triangle",   color: "#f97316" },
+  DisputeResolved:    { label: "Litige résolu",      icon: "bi-shield-check",           color: "#a78bfa" },
+  StoreCreated:       { label: "Boutique créée",     icon: "bi-shop",                   color: "#38bdf8" },
+  ProductAdded:       { label: "Produit ajouté",     icon: "bi-box-seam",               color: "#818cf8" },
+  Tous:               { label: "Tous",               icon: "bi-list",                   color: "#94a3b8" },
+};
 
 const categories = [
   // Numérique & Blockchain
@@ -118,6 +136,17 @@ function App() {
   const [disputeDescription, setDisputeDescription] = useState("");
   const [disputeImageFile, setDisputeImageFile] = useState(null);
   const [disputeDetails, setDisputeDetails] = useState({});
+  const [delivererOrders, setDelivererOrders] = useState([]);
+  const [assignInputs, setAssignInputs] = useState({});
+  const [txHistory, setTxHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historyFilter, setHistoryFilter] = useState("Tous");
+  const [chainData, setChainData] = useState(null);
+  const [loadingChainData, setLoadingChainData] = useState(false);
+  const [chainTab, setChainTab] = useState("overview");
+  const [isDelivererAccount, setIsDelivererAccount] = useState(false);
+  const [delivererCandidates, setDelivererCandidates] = useState([]);
+  const [registeredAsCandidate, setRegisteredAsCandidate] = useState(false);
 
   const loadProducts = async () => {
     try {
@@ -182,6 +211,26 @@ function App() {
     await loadDisputeDetails(data);
   };
 
+  const loadDelivererOrders = async (address) => {
+    if (!address) return;
+    const data = await getDelivererOrders(address);
+    setDelivererOrders(data);
+  };
+
+  const loadTxHistory = async () => {
+    setLoadingHistory(true);
+    const data = await getTransactionHistory();
+    setTxHistory(data);
+    setLoadingHistory(false);
+  };
+
+  const loadChainData = async () => {
+    setLoadingChainData(true);
+    const data = await getBlockchainData();
+    setChainData(data);
+    setLoadingChainData(false);
+  };
+
   const loadMyStore = async () => {
     try {
       setLoadingStore(true);
@@ -197,7 +246,7 @@ function App() {
 
   const refreshAll = async (addr) => {
     const a = addr ?? account;
-    await Promise.all([loadProducts(), loadOrders(a), loadMyStore()]);
+    await Promise.all([loadProducts(), loadOrders(a), loadMyStore(), loadDelivererOrders(a)]);
   };
 
   const connectWallet = async () => {
@@ -236,14 +285,24 @@ function App() {
     localStorage.setItem("authToken", verifyResult.token);
     setAccount(connectedAccount);
     toast.success("Connecté et authentifié");
-    await refreshAll(connectedAccount);
-    await loadSellerOrders(connectedAccount);
+    const delivererStatus = await checkIsDeliverer(connectedAccount);
+    setIsDelivererAccount(delivererStatus);
+    if (delivererStatus) {
+      await loadDelivererOrders(connectedAccount);
+      setActivePage("livraisons");
+    } else {
+      await refreshAll(connectedAccount);
+      await loadSellerOrders(connectedAccount);
+      await loadDelivererOrders(connectedAccount);
+    }
   };
 
   const disconnectWallet = () => {
     setAccount("");
     setMyStoreId(0);
     setSellerOrders([]);
+    setDelivererOrders([]);
+    setIsDelivererAccount(false);
     localStorage.removeItem("authToken");
     toast("Wallet déconnecté");
   };
@@ -285,11 +344,27 @@ function App() {
       if (result.connected) {
         const token = localStorage.getItem("authToken");
         if (token) {
-          // Vérifie que le token n'est pas expiré (décodage côté client sans vérification)
           try {
             const payload = JSON.parse(atob(token.split(".")[1]));
             if (payload.exp * 1000 > Date.now()) {
-              setAccount(result.accounts[0]);
+              const addr = result.accounts[0];
+              setAccount(addr);
+
+              // Restaurer le rôle et les données
+              const delivererStatus = await checkIsDeliverer(addr);
+              setIsDelivererAccount(delivererStatus);
+
+              if (delivererStatus) {
+                await loadDelivererOrders(addr);
+                setActivePage("livraisons");
+              } else {
+                await Promise.all([
+                  loadOrders(addr),
+                  loadMyStore(),
+                  loadSellerOrders(addr),
+                  loadDelivererOrders(addr),
+                ]);
+              }
             } else {
               localStorage.removeItem("authToken");
             }
@@ -298,11 +373,14 @@ function App() {
           }
         }
       }
+
+      // Produits visibles même sans connexion
+      await loadProducts();
     };
 
     initWallet();
-    refreshAll();
     getAdminAddress().then(a => { if (a) setAdminAddress(a.toLowerCase()); });
+    getDelivererCandidates().then(data => setDelivererCandidates(data));
   }, []);
 
   useEffect(() => {
@@ -314,6 +392,8 @@ function App() {
       setMyStoreId(0);
       setSellerOrders([]);
       setOrders([]);
+      setDelivererOrders([]);
+      setIsDelivererAccount(false);
       localStorage.removeItem("authToken");
       toast("Compte changé — reconnecte ton wallet", { icon: "🔄" });
     };
@@ -324,6 +404,22 @@ function App() {
       window.ethereum.removeListener("accountsChanged", handleAccountsChanged);
     };
   }, []);
+
+  // Quand le compte change (connexion), synchroniser le rôle livreur
+  useEffect(() => {
+    if (!account) return;
+    checkIsDeliverer(account).then(status => {
+      setIsDelivererAccount(status);
+      if (status) loadDelivererOrders(account);
+    });
+  }, [account]);
+
+  // Garde : un livreur ne peut jamais accéder à une autre page que "livraisons"
+  useEffect(() => {
+    if (isDelivererAccount && activePage !== "livraisons") {
+      setActivePage("livraisons");
+    }
+  }, [isDelivererAccount, activePage]);
 
   const filteredProducts = useMemo(() => {
     const text = query.trim().toLowerCase();
@@ -366,6 +462,15 @@ function App() {
       localStorage.removeItem("authToken");
       setAccount("");
       toast.error("Session expirée — reconnecte ton wallet");
+      return;
+    }
+
+    // Vérification on-chain : les livreurs ne peuvent pas créer de boutique
+    const isDeliv = await checkIsDeliverer(account);
+    if (isDeliv) {
+      setIsDelivererAccount(true);
+      setActivePage("livraisons");
+      toast.error("Compte livreur — création de boutique interdite");
       return;
     }
 
@@ -415,6 +520,15 @@ function App() {
       localStorage.removeItem("authToken");
       setAccount("");
       toast.error("Session expirée — reconnecte ton wallet pour continuer");
+      return;
+    }
+
+    // Vérification on-chain : les livreurs ne peuvent pas ajouter de produit
+    const isDeliv = await checkIsDeliverer(account);
+    if (isDeliv) {
+      setIsDelivererAccount(true);
+      setActivePage("livraisons");
+      toast.error("Compte livreur — ajout de produit interdit");
       return;
     }
 
@@ -626,8 +740,27 @@ function App() {
     toast.dismiss(loading);
 
     if (result.success) {
-      toast.success("Livraison confirmée");
-      await loadOrders(account);
+      toast.success("Livraison confirmée ✓ — l'acheteur a 48h pour ouvrir un litige");
+      await loadDelivererOrders(account);
+      if (!isDelivererAccount) await loadSellerOrders(account);
+    } else {
+      toast.error(result.error);
+    }
+  };
+
+  const assignDelivererHandler = async (orderId) => {
+    const delivererAddress = (assignInputs[orderId] || "").trim();
+    if (!delivererAddress) {
+      toast.error("Entre une adresse de livreur");
+      return;
+    }
+    const loading = toast.loading("Assignation du livreur...");
+    const result = await assignDeliverer(orderId, delivererAddress);
+    toast.dismiss(loading);
+    if (result.success) {
+      toast.success("Livreur assigné avec succès");
+      setAssignInputs(prev => { const n = { ...prev }; delete n[orderId]; return n; });
+      await loadSellerOrders(account);
     } else {
       toast.error(result.error);
     }
@@ -694,6 +827,8 @@ function App() {
         setActivePage={navigateTo}
         productsCount={products.length}
         ordersCount={orders.length}
+        delivererOrdersCount={delivererOrders.filter(o => !o.delivered).length}
+        isDeliverer={isDelivererAccount}
       />
 
       <div className="main">
@@ -707,7 +842,7 @@ function App() {
 
         <main className="content">
 
-          {activePage === "marketplace" && (
+          {activePage === "marketplace" && !isDelivererAccount && (
             <section className="page-card marketplace-page">
               <div className="filters-bar">
                 <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
@@ -768,6 +903,7 @@ function App() {
                       seller={product.seller}
                       averageRating={product.averageRating}
                       account={account}
+                      isDelivererAccount={isDelivererAccount}
                       onPurchaseSuccess={refreshAll}
                     />
                   ))}
@@ -776,7 +912,7 @@ function App() {
             </section>
           )}
 
-          {activePage === "vendre" && (
+          {activePage === "vendre" && !isDelivererAccount && (
             <section className="page-card">
               <div className="page-head">
                 <div>
@@ -945,7 +1081,7 @@ function App() {
             </section>
           )}
 
-          {activePage === "transactions" && (
+          {activePage === "transactions" && !isDelivererAccount && (
             <section className="page-card">
               <div className="page-head">
                 <div>
@@ -998,6 +1134,7 @@ function App() {
                       if (order.disputeResolved && order.buyerWon) statut = "Remboursé ✓";
                       else if (order.disputeResolved && !order.buyerWon) statut = "Litige refusé";
                       else if (order.disputed) statut = "En litige";
+                      else if (order.released && !order.delivered) statut = "Remboursé ✓";
                       else if (order.released) statut = "Terminé";
                       else if (order.delivered) statut = `Livré · ${hoursLeft}h restantes`;
 
@@ -1005,6 +1142,7 @@ function App() {
                       if (order.disputeResolved && order.buyerWon) statutClass = "refunded";
                       else if (order.disputeResolved && !order.buyerWon) statutClass = "rejected";
                       else if (order.disputed) statutClass = "disputed";
+                      else if (order.released && !order.delivered) statutClass = "refunded";
                       else if (order.released) statutClass = "ok";
                       else if (order.delivered) statutClass = "delivered";
 
@@ -1015,11 +1153,6 @@ function App() {
                           <span>{formatEther(order.amount)} ETH</span>
                           <em className={statutClass}>{statut}</em>
                           <div className="row-actions">
-                            {!order.delivered && (
-                              <button onClick={() => confirmDeliveryHandler(order.id)}>
-                                Confirmer livraison
-                              </button>
-                            )}
                             {inWindow && !disputeOrderId && (
                               <button className="dispute-btn" onClick={() => setDisputeOrderId(order.id)}>
                                 <i className="bi bi-exclamation-triangle"></i>
@@ -1139,7 +1272,7 @@ function App() {
             </section>
           )}
 
-          {activePage === "dashboard" && (
+          {activePage === "dashboard" && !isDelivererAccount && (
             <section className="page-card">
               <div className="page-head">
                 <div>
@@ -1177,7 +1310,7 @@ function App() {
                       <span>Revenus totaux</span>
                       <strong>
                         {sellerOrders
-                          .filter((o) => o.released)
+                          .filter((o) => o.released && o.delivered && !(o.disputeResolved && o.buyerWon))
                           .reduce((sum, o) => sum + Number(formatEther(o.amount)), 0)
                           .toFixed(4)} ETH
                       </strong>
@@ -1273,6 +1406,7 @@ function App() {
                             seller={product.seller}
                             averageRating={product.averageRating}
                             account={account}
+                            isDelivererAccount={isDelivererAccount}
                             onPurchaseSuccess={refreshAll}
                           />
                         ))}
@@ -1287,34 +1421,74 @@ function App() {
                     </div>
                   ) : (
                     <div className="table-panel">
-                      <div className="table-head" style={{ gridTemplateColumns: "0.5fr 1.2fr 1.2fr 0.9fr 1fr 1.2fr" }}>
+                      <div className="table-head" style={{ gridTemplateColumns: "0.5fr 1.2fr 1fr 0.8fr 0.9fr 2fr" }}>
                         <span>ID</span>
                         <span>Produit</span>
                         <span>Acheteur</span>
                         <span>Montant</span>
                         <span>Statut</span>
-                        <span>Action</span>
+                        <span>Livreur / Action</span>
                       </div>
                       {sellerOrders.map((order) => {
                         const now = Math.floor(Date.now() / 1000);
                         const canRelease = order.delivered && !order.released && !order.disputed
                           && now >= order.deliveryTimestamp + 48 * 3600;
                         let statut = "En attente";
-                        if (order.disputed) statut = "En litige";
+                        if (order.disputed && order.disputeResolved && order.buyerWon) statut = "Remboursé";
+                        else if (order.disputed && order.disputeResolved && !order.buyerWon) statut = "Payé";
+                        else if (order.disputed) statut = "En litige";
+                        else if (order.released && !order.delivered) statut = "Remboursé";
                         else if (order.released) statut = "Payé";
                         else if (order.delivered) statut = "Livré";
+                        const hasDeliverer = order.deliverer && order.deliverer !== "0x0000000000000000000000000000000000000000";
                         return (
-                          <div className="table-row" key={order.id} style={{ gridTemplateColumns: "0.5fr 1.2fr 1.2fr 0.9fr 1fr 1.2fr" }}>
+                          <div className="table-row" key={order.id} style={{ gridTemplateColumns: "0.5fr 1.2fr 1fr 0.8fr 0.9fr 2fr" }}>
                             <span>#{order.id}</span>
                             <strong>{products.find(p => p.id === order.productId)?.metadata?.name || `Produit #${order.productId}`}</strong>
                             <span title={order.buyer}>{shortAddress(order.buyer)}</span>
                             <span>{formatEther(order.amount)} ETH</span>
-                            <em className={order.disputed ? "disputed" : order.released ? "ok" : "pending"}>{statut}</em>
+                            <em className={
+                              order.released && !order.delivered ? "refunded" :
+                              order.disputeResolved && order.buyerWon ? "refunded" :
+                              order.disputed ? "disputed" :
+                              order.released ? "ok" : "pending"
+                            }>{statut}</em>
                             <div className="row-actions">
                               {canRelease && (
                                 <button className="primary-btn" style={{ fontSize: "0.8rem", padding: "6px 12px" }} onClick={() => releaseFundsHandler(order.id)}>
                                   Libérer les fonds
                                 </button>
+                              )}
+                              {!order.delivered && !order.released && (
+                                hasDeliverer ? (
+                                  <span className="deliverer-assigned" title={order.deliverer}>
+                                    <i className="bi bi-truck"></i> {shortAddress(order.deliverer)}
+                                  </span>
+                                ) : (
+                                  <div className="assign-deliverer-row">
+                                    {delivererCandidates.length > 0 ? (
+                                      <select
+                                        value={assignInputs[order.id] || ""}
+                                        onChange={e => setAssignInputs(prev => ({ ...prev, [order.id]: e.target.value }))}
+                                      >
+                                        <option value="">-- Choisir un livreur --</option>
+                                        {delivererCandidates.map(d => (
+                                          <option key={d.address} value={d.address}>{shortAddress(d.address)} — {d.address}</option>
+                                        ))}
+                                      </select>
+                                    ) : (
+                                      <input
+                                        type="text"
+                                        placeholder="Adresse du livreur (0x...)"
+                                        value={assignInputs[order.id] || ""}
+                                        onChange={e => setAssignInputs(prev => ({ ...prev, [order.id]: e.target.value }))}
+                                      />
+                                    )}
+                                    <button className="ghost-btn" style={{ fontSize: "0.78rem", padding: "5px 10px" }} onClick={() => assignDelivererHandler(order.id)}>
+                                      <i className="bi bi-person-check"></i> Assigner
+                                    </button>
+                                  </div>
+                                )
                               )}
                             </div>
                           </div>
@@ -1380,6 +1554,397 @@ function App() {
                     </>
                   )}
                 </>
+              )}
+            </section>
+          )}
+
+          {activePage === "livraisons" && (
+            <section className="page-card">
+              <div className="page-head">
+                <div>
+                  <span className="eyebrow">Livreur</span>
+                  <h1>Mes livraisons</h1>
+                  <p>Commandes qui vous ont été assignées à livrer. Confirmez sur la blockchain quand vous avez livré.</p>
+                </div>
+                {account && (
+                  <button className="primary-btn" onClick={() => loadDelivererOrders(account)}>
+                    <i className="bi bi-arrow-clockwise"></i>
+                    Actualiser
+                  </button>
+                )}
+              </div>
+
+              {account && (
+                <div className="deliverer-address-box">
+                  <span className="deliverer-address-label">
+                    <i className="bi bi-wallet2"></i> Mon adresse (à donner au vendeur) :
+                  </span>
+                  <code className="deliverer-address-value">{account}</code>
+                  <button className="ghost-btn" onClick={() => { navigator.clipboard.writeText(account); toast.success("Adresse copiée !"); }}>
+                    <i className="bi bi-clipboard"></i> Copier
+                  </button>
+                </div>
+              )}
+
+              {account && !isDelivererAccount && (
+                <div className="deliverer-register-banner">
+                  <i className="bi bi-truck"></i>
+                  <div>
+                    <strong>Devenir livreur disponible</strong>
+                    <p>Inscris-toi pour apparaître dans la liste des livreurs disponibles. Les vendeurs pourront te sélectionner directement.</p>
+                  </div>
+                  {registeredAsCandidate ? (
+                    <span className="registered-badge"><i className="bi bi-check-circle"></i> Inscrit</span>
+                  ) : (
+                    <button className="primary-btn" onClick={async () => {
+                      const result = await registerAsDeliverer(account);
+                      if (result.success) {
+                        setRegisteredAsCandidate(true);
+                        toast.success("Inscrit comme livreur disponible !");
+                        const updated = await getDelivererCandidates();
+                        setDelivererCandidates(updated);
+                      } else {
+                        toast.error("Erreur inscription : " + (result.error || "inconnue"));
+                      }
+                    }}>
+                      <i className="bi bi-person-plus"></i>
+                      S'inscrire comme livreur
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {!account ? (
+                <div className="empty-state">
+                  <i className="bi bi-wallet2"></i>
+                  <h3>Connecte ton wallet</h3>
+                  <p>Tes livraisons s'affichent uniquement quand tu es connecté.</p>
+                </div>
+              ) : delivererOrders.length === 0 ? (
+                <div className="empty-state">
+                  <i className="bi bi-truck"></i>
+                  <h3>Aucune livraison assignée</h3>
+                  <p>Un vendeur doit t'assigner comme livreur pour une commande.</p>
+                </div>
+              ) : (
+                <div className="table-panel">
+                  <div className="table-head" style={{ gridTemplateColumns: "0.6fr 1.4fr 1.2fr 1fr 1fr 1.2fr" }}>
+                    <span>ID</span>
+                    <span>Produit</span>
+                    <span>Acheteur</span>
+                    <span>Montant</span>
+                    <span>Statut</span>
+                    <span>Action</span>
+                  </div>
+                  {delivererOrders.map((order) => {
+                    let statut = "À livrer";
+                    let statutClass = "pending";
+                    if (order.released) { statut = "Terminé"; statutClass = "ok"; }
+                    else if (order.disputed) { statut = "En litige"; statutClass = "disputed"; }
+                    else if (order.delivered) { statut = "Livré ✓"; statutClass = "delivered"; }
+                    return (
+                      <div className="table-row" key={order.id} style={{ gridTemplateColumns: "0.6fr 1.4fr 1.2fr 1fr 1fr 1.2fr" }}>
+                        <span>#{order.id}</span>
+                        <strong>{products.find(p => p.id === order.productId)?.metadata?.name || `Produit #${order.productId}`}</strong>
+                        <span title={order.buyer}>{shortAddress(order.buyer)}</span>
+                        <span>{formatEther(order.amount)} ETH</span>
+                        <em className={statutClass}>{statut}</em>
+                        <div className="row-actions">
+                          {!order.delivered && !order.released && (
+                            <button className="primary-btn" style={{ fontSize: "0.82rem", padding: "6px 14px" }} onClick={() => confirmDeliveryHandler(order.id)}>
+                              <i className="bi bi-check2-circle"></i>
+                              Confirmer livraison
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          )}
+
+          {activePage === "blockchain" && !isDelivererAccount && (
+            <section className="page-card">
+              <div className="page-head">
+                <div>
+                  <span className="eyebrow">Smart Contract</span>
+                  <h1>Données Blockchain</h1>
+                  <p>Toutes les données écrites dans le smart contract Ethereum — source de vérité immuable.</p>
+                </div>
+                <button className="primary-btn" onClick={loadChainData} disabled={loadingChainData}>
+                  <i className={`bi bi-arrow-clockwise${loadingChainData ? " spin" : ""}`}></i>
+                  {loadingChainData ? "Lecture..." : "Lire la blockchain"}
+                </button>
+              </div>
+
+              {!chainData && !loadingChainData && (
+                <div className="empty-state">
+                  <i className="bi bi-database"></i>
+                  <h3>Données non chargées</h3>
+                  <p>Clique sur "Lire la blockchain" pour afficher toutes les données du smart contract.</p>
+                </div>
+              )}
+
+              {loadingChainData && (
+                <div className="empty-state">
+                  <div className="loader"></div>
+                  <h3>Lecture du smart contract...</h3>
+                  <p>Récupération de toutes les données on-chain.</p>
+                </div>
+              )}
+
+              {chainData && !loadingChainData && (
+                <>
+                  {/* Infos contrat */}
+                  <div className="chain-contract-info">
+                    <div>
+                      <small>Adresse du contrat</small>
+                      <code>{chainData.contractAddress}</code>
+                    </div>
+                    <div>
+                      <small>Administrateur</small>
+                      <code>{chainData.admin}</code>
+                    </div>
+                  </div>
+
+                  {/* Compteurs */}
+                  <div className="chain-stats">
+                    <div className="chain-stat">
+                      <i className="bi bi-shop" style={{ color: "#38bdf8" }}></i>
+                      <strong>{chainData.counts.stores}</strong>
+                      <span>Boutiques</span>
+                    </div>
+                    <div className="chain-stat">
+                      <i className="bi bi-box-seam" style={{ color: "#818cf8" }}></i>
+                      <strong>{chainData.counts.products}</strong>
+                      <span>Produits</span>
+                    </div>
+                    <div className="chain-stat">
+                      <i className="bi bi-receipt" style={{ color: "#4f8cff" }}></i>
+                      <strong>{chainData.counts.orders}</strong>
+                      <span>Commandes</span>
+                    </div>
+                    <div className="chain-stat">
+                      <i className="bi bi-star-fill" style={{ color: "#fbbf24" }}></i>
+                      <strong>{chainData.counts.reviews}</strong>
+                      <span>Avis</span>
+                    </div>
+                  </div>
+
+                  {/* Onglets */}
+                  <div className="chain-tabs">
+                    {[
+                      { id: "overview", label: "Vue d'ensemble" },
+                      { id: "stores",   label: `Boutiques (${chainData.counts.stores})` },
+                      { id: "products", label: `Produits (${chainData.counts.products})` },
+                      { id: "orders",   label: `Commandes (${chainData.counts.orders})` },
+                      { id: "reviews",  label: `Avis (${chainData.counts.reviews})` },
+                    ].map(t => (
+                      <button key={t.id} className={`chain-tab${chainTab === t.id ? " active" : ""}`} onClick={() => setChainTab(t.id)}>
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Vue d'ensemble */}
+                  {chainTab === "overview" && (
+                    <div className="chain-overview">
+                      <div className="chain-overview-block">
+                        <h3><i className="bi bi-shop"></i> Boutiques</h3>
+                        {chainData.stores.map(s => (
+                          <div key={s.id} className="chain-row">
+                            <span className="chain-id">Store #{s.id}</span>
+                            <span className="chain-name">{s.name}</span>
+                            <code className="chain-addr">{s.owner}</code>
+                            <span className="chain-ipfs" title={s.ipfsHash}>{s.ipfsHash ? s.ipfsHash.slice(0,20)+"…" : "—"}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="chain-overview-block">
+                        <h3><i className="bi bi-box-seam"></i> Produits</h3>
+                        {chainData.products.map(p => (
+                          <div key={p.id} className="chain-row">
+                            <span className="chain-id">Prod #{p.id}</span>
+                            <span className="chain-price">{p.price} ETH</span>
+                            <span className="chain-stock">Stock: {p.stock}</span>
+                            <code className="chain-addr">{p.seller}</code>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Boutiques */}
+                  {chainTab === "stores" && (
+                    <div className="chain-table">
+                      <div className="chain-thead" style={{ gridTemplateColumns: "0.5fr 1.5fr 2.5fr 2fr" }}>
+                        <span>ID</span><span>Nom</span><span>Propriétaire</span><span>IPFS Hash</span>
+                      </div>
+                      {chainData.stores.map(s => (
+                        <div key={s.id} className="chain-trow" style={{ gridTemplateColumns: "0.5fr 1.5fr 2.5fr 2fr" }}>
+                          <span className="chain-id">#{s.id}</span>
+                          <strong>{s.name}</strong>
+                          <code>{s.owner}</code>
+                          <a href={`https://gateway.pinata.cloud/ipfs/${s.ipfsHash}`} target="_blank" rel="noreferrer" className="chain-ipfs-link">{s.ipfsHash ? s.ipfsHash.slice(0,24)+"…" : "—"}</a>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Produits */}
+                  {chainTab === "products" && (
+                    <div className="chain-table">
+                      <div className="chain-thead" style={{ gridTemplateColumns: "0.5fr 0.6fr 1fr 0.7fr 2.5fr 1.8fr" }}>
+                        <span>ID</span><span>Store</span><span>Prix</span><span>Stock</span><span>Vendeur</span><span>IPFS Hash</span>
+                      </div>
+                      {chainData.products.map(p => (
+                        <div key={p.id} className="chain-trow" style={{ gridTemplateColumns: "0.5fr 0.6fr 1fr 0.7fr 2.5fr 1.8fr" }}>
+                          <span className="chain-id">#{p.id}</span>
+                          <span>#{p.storeId}</span>
+                          <strong>{p.price} ETH</strong>
+                          <span>{p.stock}</span>
+                          <code>{p.seller}</code>
+                          <a href={`https://gateway.pinata.cloud/ipfs/${p.ipfsHash}`} target="_blank" rel="noreferrer" className="chain-ipfs-link">{p.ipfsHash ? p.ipfsHash.slice(0,20)+"…" : "—"}</a>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Commandes */}
+                  {chainTab === "orders" && (
+                    <div className="chain-table">
+                      <div className="chain-thead" style={{ gridTemplateColumns: "0.4fr 0.5fr 0.8fr 2fr 2fr 1.6fr 1.8fr" }}>
+                        <span>ID</span><span>Prod</span><span>Montant</span><span>Acheteur</span><span>Livreur</span><span>Statut</span><span>Dispute IPFS</span>
+                      </div>
+                      {chainData.orders.map(o => {
+                        let statut = "En attente";
+                        let sClass = "pending";
+                        if (o.disputeResolved && o.buyerWon) { statut = "Remboursé"; sClass = "refunded"; }
+                        else if (o.disputeResolved) { statut = "Litige → Vendeur"; sClass = "ok"; }
+                        else if (o.disputed) { statut = "En litige"; sClass = "disputed"; }
+                        else if (o.released && !o.delivered) { statut = "Remboursé"; sClass = "refunded"; }
+                        else if (o.released) { statut = "Payé"; sClass = "ok"; }
+                        else if (o.delivered) { statut = "Livré"; sClass = "delivered"; }
+                        const noAddr = "0x0000000000000000000000000000000000000000";
+                        return (
+                          <div key={o.id} className="chain-trow" style={{ gridTemplateColumns: "0.4fr 0.5fr 0.8fr 2fr 2fr 1.6fr 1.8fr" }}>
+                            <span className="chain-id">#{o.id}</span>
+                            <span>#{o.productId}</span>
+                            <strong>{o.amount} ETH</strong>
+                            <code>{o.buyer}</code>
+                            <code>{o.deliverer === noAddr ? <em style={{ color: "var(--muted)" }}>Non assigné</em> : o.deliverer}</code>
+                            <em className={sClass}>{statut}</em>
+                            <span>{o.disputeIpfsHash ? <a href={`https://gateway.pinata.cloud/ipfs/${o.disputeIpfsHash}`} target="_blank" rel="noreferrer" className="chain-ipfs-link">{o.disputeIpfsHash.slice(0,16)}…</a> : "—"}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Avis */}
+                  {chainTab === "reviews" && (
+                    chainData.reviews.length === 0 ? (
+                      <div className="empty-state">
+                        <i className="bi bi-star"></i>
+                        <h3>Aucun avis enregistré</h3>
+                      </div>
+                    ) : (
+                      <div className="chain-table">
+                        <div className="chain-thead" style={{ gridTemplateColumns: "0.5fr 0.7fr 0.7fr 0.7fr 2.5fr 2fr" }}>
+                          <span>ID</span><span>Produit</span><span>Commande</span><span>Note</span><span>Auteur</span><span>IPFS Hash</span>
+                        </div>
+                        {chainData.reviews.map((r, i) => (
+                          <div key={i} className="chain-trow" style={{ gridTemplateColumns: "0.5fr 0.7fr 0.7fr 0.7fr 2.5fr 2fr" }}>
+                            <span className="chain-id">#{r.id}</span>
+                            <span>Prod #{r.productId}</span>
+                            <span>Cmd #{r.orderId}</span>
+                            <strong style={{ color: "#fbbf24" }}>{"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)}</strong>
+                            <code>{r.reviewer}</code>
+                            <a href={`https://gateway.pinata.cloud/ipfs/${r.ipfsHash}`} target="_blank" rel="noreferrer" className="chain-ipfs-link">{r.ipfsHash ? r.ipfsHash.slice(0,20)+"…" : "—"}</a>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  )}
+                </>
+              )}
+            </section>
+          )}
+
+          {activePage === "historique" && !isDelivererAccount && (
+            <section className="page-card">
+              <div className="page-head">
+                <div>
+                  <span className="eyebrow">Traçabilité</span>
+                  <h1>Historique des transactions</h1>
+                  <p>Toutes les opérations enregistrées sur la blockchain avec date, agent et hash.</p>
+                </div>
+                <button className="primary-btn" onClick={loadTxHistory} disabled={loadingHistory}>
+                  <i className={`bi ${loadingHistory ? "bi-arrow-clockwise spin" : "bi-arrow-clockwise"}`}></i>
+                  {loadingHistory ? "Chargement..." : "Charger"}
+                </button>
+              </div>
+
+              <div className="history-filters">
+                {["Tous","OrderCreated","DelivererAssigned","DeliveryConfirmed","FundsReleased","RefundClaimed","DisputeOpened","DisputeResolved","StoreCreated","ProductAdded"].map(f => (
+                  <button
+                    key={f}
+                    className={`history-filter-btn ${historyFilter === f ? "active" : ""}`}
+                    onClick={() => setHistoryFilter(f)}
+                  >
+                    {EVENT_META[f]?.label || f}
+                  </button>
+                ))}
+              </div>
+
+              {loadingHistory ? (
+                <div className="empty-state">
+                  <div className="loader"></div>
+                  <h3>Lecture de la blockchain...</h3>
+                </div>
+              ) : txHistory.length === 0 ? (
+                <div className="empty-state">
+                  <i className="bi bi-clock-history"></i>
+                  <h3>Aucune transaction chargée</h3>
+                  <p>Clique sur "Charger" pour lire l'historique depuis la blockchain.</p>
+                </div>
+              ) : (
+                <div className="history-table">
+                  <div className="history-head">
+                    <span>Date & Heure</span>
+                    <span>Événement</span>
+                    <span>Agent principal</span>
+                    <span>Réf.</span>
+                    <span>Montant</span>
+                    <span>Hash</span>
+                  </div>
+                  {txHistory
+                    .filter(tx => historyFilter === "Tous" || tx.event === historyFilter)
+                    .map((tx, i) => {
+                      const meta = EVENT_META[tx.event] || { label: tx.event, icon: "bi-circle", color: "#94a3b8" };
+                      const date = tx.timestamp
+                        ? new Date(tx.timestamp * 1000).toLocaleString("fr-FR")
+                        : "—";
+                      const agent = tx.args.buyer || tx.args.deliverer || tx.args.seller || tx.args.owner || "—";
+                      const ref = tx.args.orderId ? `Cmd #${tx.args.orderId}` : tx.args.productId ? `Prod #${tx.args.productId}` : tx.args.storeId ? `Store #${tx.args.storeId}` : "—";
+                      const amount = tx.args.amount ? `${formatEther(BigInt(tx.args.amount))} ETH` : "—";
+                      const shortHash = tx.txHash ? `${tx.txHash.slice(0, 8)}...${tx.txHash.slice(-6)}` : "—";
+                      return (
+                        <div className="history-row" key={i}>
+                          <span className="history-date">{date}</span>
+                          <span className="history-event" style={{ color: meta.color }}>
+                            <i className={`bi ${meta.icon}`}></i> {meta.label}
+                          </span>
+                          <span className="history-agent" title={agent}>{shortAddress(agent)}</span>
+                          <span className="history-ref">{ref}</span>
+                          <span className="history-amount">{amount}</span>
+                          <span className="history-hash" title={tx.txHash}>{shortHash}</span>
+                        </div>
+                      );
+                    })}
+                </div>
               )}
             </section>
           )}

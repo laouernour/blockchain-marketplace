@@ -42,6 +42,7 @@ function ProductCard({
   category,
   ipfsHash,
   account,
+  isDelivererAccount,
   onPurchaseSuccess,
 }) {
   const [showReviews, setShowReviews] = useState(false);
@@ -55,6 +56,11 @@ function ProductCard({
   const handleBuy = async () => {
     if (!account) {
       toast.error("Connecte-toi d'abord avec MetaMask");
+      return;
+    }
+
+    if (isDelivererAccount) {
+      toast.error("Compte livreur — les achats sont interdits");
       return;
     }
 

@@ -267,6 +267,7 @@ function parseOrder(o) {
     id: Number(o.id),
     productId: Number(o.productId),
     buyer: o.buyer,
+    deliverer: o.deliverer || "",
     amount: o.amount.toString(),
     delivered: o.delivered,
     released: o.released,
@@ -365,6 +366,41 @@ export const getBuyerOrders = async (buyerAddress) => {
   }
 };
 
+// Assigner un livreur (vendeur uniquement)
+export const assignDeliverer = async (orderId, delivererAddress) => {
+  try {
+    const contract = await getContract();
+    const tx = await contract.assignDeliverer(BigInt(orderId), delivererAddress);
+    await tx.wait();
+    return { success: true };
+  } catch (error) {
+    console.error("Erreur assignDeliverer:", error);
+    if (error.message === "ACCOUNT_MISMATCH") {
+      return { success: false, error: "Compte MetaMask changé — déconnecte et reconnecte ton wallet" };
+    }
+    return { success: false, error: extractError(error) };
+  }
+};
+
+// Charger les livraisons d'un livreur
+export const getDelivererOrders = async (delivererAddress) => {
+  try {
+    if (!delivererAddress || !window.ethereum) return [];
+    const provider = new BrowserProvider(window.ethereum);
+    const contract = new Contract(CONTRACT_ADDRESS, MarketplaceABI.abi, provider);
+    const orderIds = await contract.getOrderIdsByDeliverer(delivererAddress);
+    const orders = [];
+    for (const id of orderIds) {
+      const o = await contract.orders(id);
+      if (o.exists) orders.push(parseOrder(o));
+    }
+    return orders;
+  } catch (error) {
+    console.error("Erreur getDelivererOrders:", error);
+    return [];
+  }
+};
+
 // Ouvrir un litige (acheteur, dans les 48h après confirmation)
 export const openDispute = async (orderId, ipfsHash = "") => {
   try {
@@ -401,6 +437,146 @@ export const resolveDispute = async (orderId, favorBuyer) => {
   } catch (error) {
     console.error("Erreur resolveDispute:", error);
     return { success: false, error: extractError(error) };
+  }
+};
+
+// Toutes les données brutes stockées dans le smart contract
+export const getBlockchainData = async () => {
+  try {
+    if (!window.ethereum) return null;
+    const provider = new BrowserProvider(window.ethereum);
+    const contract = new Contract(CONTRACT_ADDRESS, MarketplaceABI.abi, provider);
+
+    const [storeCount, productCount, orderCount, admin] = await Promise.all([
+      contract.storeCount(),
+      contract.productCount(),
+      contract.orderCount(),
+      contract.admin(),
+    ]);
+
+    // Boutiques
+    const stores = [];
+    for (let i = 1; i <= Number(storeCount); i++) {
+      const s = await contract.stores(i);
+      if (s.exists) stores.push({ id: Number(s.id), owner: s.owner, name: s.name, ipfsHash: s.ipfsHash });
+    }
+
+    // Produits
+    const products = [];
+    for (let i = 1; i <= Number(productCount); i++) {
+      const p = await contract.products(i);
+      if (p.exists) products.push({
+        id: Number(p.id), storeId: Number(p.storeId), seller: p.seller,
+        price: formatEther(p.price), stock: Number(p.stock), ipfsHash: p.ipfsHash,
+      });
+    }
+
+    // Commandes
+    const orders = [];
+    for (let i = 1; i <= Number(orderCount); i++) {
+      const o = await contract.orders(i);
+      if (o.exists) orders.push({
+        id: Number(o.id), productId: Number(o.productId), buyer: o.buyer,
+        deliverer: o.deliverer, amount: formatEther(o.amount),
+        delivered: o.delivered, released: o.released, disputed: o.disputed,
+        disputeResolved: o.disputeResolved, buyerWon: o.buyerWon,
+        deliveryTimestamp: Number(o.deliveryTimestamp),
+        disputeIpfsHash: o.disputeIpfsHash,
+      });
+    }
+
+    // Avis (par produit)
+    const reviews = [];
+    for (const p of products) {
+      const count = await contract.getReviewsCount(p.id);
+      for (let j = 0; j < Number(count); j++) {
+        const r = await contract.getReview(p.id, j);
+        reviews.push({
+          id: Number(r[0]), orderId: Number(r[1]), productId: Number(r[2]),
+          reviewer: r[3], rating: Number(r[4]), ipfsHash: r[5],
+        });
+      }
+    }
+
+    return {
+      contractAddress: CONTRACT_ADDRESS,
+      admin,
+      counts: {
+        stores: Number(storeCount),
+        products: Number(productCount),
+        orders: Number(orderCount),
+        reviews: reviews.length,
+      },
+      stores,
+      products,
+      orders,
+      reviews,
+    };
+  } catch (error) {
+    console.error("Erreur getBlockchainData:", error);
+    return null;
+  }
+};
+
+// Historique de toutes les transactions du contrat (via events)
+export const getTransactionHistory = async () => {
+  try {
+    if (!window.ethereum) return [];
+    const provider = new BrowserProvider(window.ethereum);
+    const contract = new Contract(CONTRACT_ADDRESS, MarketplaceABI.abi, provider);
+
+    const eventNames = [
+      "OrderCreated",
+      "DelivererAssigned",
+      "DeliveryConfirmed",
+      "FundsReleased",
+      "RefundClaimed",
+      "DisputeOpened",
+      "DisputeResolved",
+      "StoreCreated",
+      "ProductAdded",
+    ];
+
+    const allEvents = [];
+
+    for (const name of eventNames) {
+      const events = await contract.queryFilter(name);
+      for (const e of events) {
+        const block = await provider.getBlock(e.blockNumber);
+        const args = {};
+        if (e.fragment?.inputs) {
+          e.fragment.inputs.forEach((input, i) => {
+            const val = e.args[i];
+            args[input.name] = typeof val === "bigint" ? val.toString() : val;
+          });
+        }
+        allEvents.push({
+          event: name,
+          args,
+          blockNumber: e.blockNumber,
+          txHash: e.transactionHash,
+          timestamp: block?.timestamp ? Number(block.timestamp) : 0,
+        });
+      }
+    }
+
+    allEvents.sort((a, b) => b.blockNumber - a.blockNumber);
+    return allEvents;
+  } catch (error) {
+    console.error("Erreur getTransactionHistory:", error);
+    return [];
+  }
+};
+
+// Vérifier si une adresse est enregistrée comme livreur
+export const checkIsDeliverer = async (address) => {
+  try {
+    if (!address || !window.ethereum) return false;
+    const provider = new BrowserProvider(window.ethereum);
+    const contract = new Contract(CONTRACT_ADDRESS, MarketplaceABI.abi, provider);
+    return await contract.isDeliverer(address);
+  } catch {
+    return false;
   }
 };
 

@@ -7,6 +7,7 @@ const pool = require("./config/db");
 
 const productsRoutes = require("./routes/products");
 const authRoutes = require("./routes/auth");
+const deliverersRoutes = require("./routes/deliverers");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -59,6 +60,7 @@ app.get("/", async (req, res) => {
 
 app.use("/auth", authRoutes);
 app.use("/products", productsRoutes);
+app.use("/deliverers", deliverersRoutes);
 
 // Gestion centralisée des erreurs
 app.use((err, req, res, next) => {

@@ -56,6 +56,29 @@ export const getProductsMetadata = async () => {
   }
 };
 
+export const registerAsDeliverer = async (address) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/deliverers/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address }),
+    });
+    return await response.json();
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+};
+
+export const getDelivererCandidates = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/deliverers`);
+    const json = await response.json();
+    return json.success ? json.data : [];
+  } catch (error) {
+    return [];
+  }
+};
+
 export const saveProductMetadata = async (productData) => {
   try {
     const response = await fetch(`${API_BASE_URL}/products`, {
