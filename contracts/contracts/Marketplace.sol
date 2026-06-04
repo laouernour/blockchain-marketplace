@@ -42,6 +42,8 @@ contract Marketplace {
         bool buyerWon;
         uint256 deliveryTimestamp;
         string disputeIpfsHash;
+        bool refundRequested;
+        bool refundApproved;
         bool exists;
     }
 
@@ -84,9 +86,12 @@ contract Marketplace {
     event DisputeOpened(uint256 indexed orderId, address indexed buyer, string ipfsHash);
     event DisputeResolved(uint256 indexed orderId, bool favorBuyer);
     event ReviewSubmitted(uint256 indexed reviewId, uint256 indexed productId, address indexed reviewer, uint8 rating, string ipfsHash);
+    event RefundRequested(uint256 indexed orderId, address indexed buyer);
+    event RefundApproved(uint256 indexed orderId, address indexed seller);
+    event ReturnConfirmed(uint256 indexed orderId, address indexed deliverer, uint256 amount);
 
-    constructor() {
-        admin = msg.sender;
+    constructor(address _admin) {
+        admin = _admin != address(0) ? _admin : msg.sender;
     }
 
     modifier onlyAdmin() {
@@ -163,6 +168,8 @@ contract Marketplace {
             buyerWon: false,
             deliveryTimestamp: 0,
             disputeIpfsHash: "",
+            refundRequested: false,
+            refundApproved: false,
             exists: true
         });
         orderTimestamp[orderCount] = block.timestamp;
@@ -283,6 +290,60 @@ contract Marketplace {
         }
 
         emit DisputeResolved(_orderId, _favorBuyer);
+    }
+
+    // ─── Flux retour symétrique ───────────────────────────────────────────────
+
+    function requestRefund(uint256 _orderId) external {
+        Order storage o = orders[_orderId];
+        require(o.exists, "Order not found");
+        require(msg.sender == o.buyer, "Only buyer can request refund");
+        require(!o.released, "Funds already released");
+        require(!o.disputed, "Order is disputed");
+        require(!o.refundRequested, "Refund already requested");
+
+        o.refundRequested = true;
+        emit RefundRequested(_orderId, msg.sender);
+    }
+
+    function approveRefund(uint256 _orderId) external {
+        Order storage o = orders[_orderId];
+        Product storage p = products[o.productId];
+        require(o.exists, "Order not found");
+        require(msg.sender == p.seller, "Only seller can approve refund");
+        require(o.refundRequested, "No refund requested");
+        require(!o.released, "Funds already released");
+        require(!o.refundApproved, "Refund already approved");
+
+        o.refundApproved = true;
+
+        if (o.deliverer == address(0)) {
+            // Pas de livreur : remboursement immédiat
+            o.released = true;
+            if (p.exists) p.stock++;
+            (bool ok, ) = payable(o.buyer).call{value: o.amount}("");
+            require(ok, "Refund failed");
+            emit ReturnConfirmed(_orderId, address(0), o.amount);
+        } else {
+            emit RefundApproved(_orderId, msg.sender);
+        }
+    }
+
+    function confirmReturn(uint256 _orderId) external {
+        Order storage o = orders[_orderId];
+        require(o.exists, "Order not found");
+        require(msg.sender == o.deliverer, "Only assigned deliverer can confirm return");
+        require(o.refundApproved, "Refund not approved by seller");
+        require(!o.released, "Funds already released");
+
+        o.released = true;
+        Product storage p = products[o.productId];
+        if (p.exists) p.stock++;
+
+        (bool ok, ) = payable(o.buyer).call{value: o.amount}("");
+        require(ok, "Refund failed");
+
+        emit ReturnConfirmed(_orderId, msg.sender, o.amount);
     }
 
     // ─── Remboursement (7 jours sans livraison) ───────────────────────────────

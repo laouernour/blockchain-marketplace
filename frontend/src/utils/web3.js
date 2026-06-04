@@ -276,6 +276,8 @@ function parseOrder(o) {
     buyerWon: o.buyerWon,
     deliveryTimestamp: Number(o.deliveryTimestamp),
     disputeIpfsHash: o.disputeIpfsHash || "",
+    refundRequested: o.refundRequested || false,
+    refundApproved: o.refundApproved || false,
     exists: o.exists,
   };
 }
@@ -398,6 +400,43 @@ export const getDelivererOrders = async (delivererAddress) => {
   } catch (error) {
     console.error("Erreur getDelivererOrders:", error);
     return [];
+  }
+};
+
+// Demander un remboursement symétrique (acheteur → vendeur → livreur)
+export const requestRefund = async (orderId) => {
+  try {
+    const contract = await getContract();
+    const tx = await contract.requestRefund(BigInt(orderId));
+    await tx.wait();
+    return { success: true };
+  } catch (error) {
+    console.error("Erreur requestRefund:", error);
+    return { success: false, error: extractError(error) };
+  }
+};
+
+export const approveRefund = async (orderId) => {
+  try {
+    const contract = await getContract();
+    const tx = await contract.approveRefund(BigInt(orderId));
+    await tx.wait();
+    return { success: true };
+  } catch (error) {
+    console.error("Erreur approveRefund:", error);
+    return { success: false, error: extractError(error) };
+  }
+};
+
+export const confirmReturn = async (orderId) => {
+  try {
+    const contract = await getContract();
+    const tx = await contract.confirmReturn(BigInt(orderId));
+    await tx.wait();
+    return { success: true };
+  } catch (error) {
+    console.error("Erreur confirmReturn:", error);
+    return { success: false, error: extractError(error) };
   }
 };
 
@@ -577,6 +616,43 @@ export const checkIsDeliverer = async (address) => {
     return await contract.isDeliverer(address);
   } catch {
     return false;
+  }
+};
+
+export const getStoreOfOwner = async (address) => {
+  try {
+    if (!address || !window.ethereum) return 0;
+    const provider = new BrowserProvider(window.ethereum);
+    const contract = new Contract(CONTRACT_ADDRESS, MarketplaceABI.abi, provider);
+    return Number(await contract.storeOfOwner(address));
+  } catch {
+    return 0;
+  }
+};
+
+// Détecte le rôle d'une adresse : "deliverer" | "seller" | "buyer"
+export const detectUserRole = async (address) => {
+  try {
+    // 1. Vérifier contrat (livreur assigné à une commande)
+    const isDeliv = await checkIsDeliverer(address);
+    if (isDeliv) return "deliverer";
+
+    // 2. Vérifier table deliverer_candidates (inscrit comme livreur)
+    try {
+      const resp = await fetch("http://localhost:5000/deliverers");
+      const json = await resp.json();
+      if (json.success && json.data.some(d => d.address.toLowerCase() === address.toLowerCase())) {
+        return "deliverer";
+      }
+    } catch { /* backend indisponible */ }
+
+    // 3. Vérifier si vendeur (a une boutique)
+    const storeId = await getStoreOfOwner(address);
+    if (storeId > 0) return "seller";
+
+    return "buyer";
+  } catch {
+    return "buyer";
   }
 };
 

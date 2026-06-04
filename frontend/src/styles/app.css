@@ -1113,6 +1113,21 @@ em.rejected {
   border: 1px solid rgba(251, 191, 36, 0.3);
   color: #fbbf24;
 }
+.seller-badge {
+  background: rgba(79, 140, 255, 0.12);
+  border: 1px solid rgba(79, 140, 255, 0.3);
+  color: #4f8cff;
+}
+.buyer-badge {
+  background: rgba(51, 214, 166, 0.12);
+  border: 1px solid rgba(51, 214, 166, 0.3);
+  color: #33d6a6;
+}
+.admin-badge {
+  background: rgba(168, 85, 247, 0.12);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  color: #a855f7;
+}
 
 /* ─── Livreur ─────────────────────────────────────────── */
 
@@ -1623,4 +1638,442 @@ em.delivered {
 .assign-deliverer-row select option {
   background: #0d1221;
   color: var(--text);
+}
+
+/* ── IA & Analytique ────────────────────────────────────────────────────── */
+
+.ai-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.ai-kpi {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 20px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.ai-kpi i { font-size: 1.4rem; }
+.ai-kpi strong { font-size: 2rem; font-weight: 900; color: var(--text); line-height: 1; }
+.ai-kpi span { font-size: 0.82rem; color: var(--muted); }
+
+.ai-panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.ai-panel {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 20px 22px;
+}
+
+.ai-panel-full {
+  grid-column: 1 / -1;
+}
+
+.ai-panel h2 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-panel h2 i { color: var(--blue); }
+
+/* Barres horizontales catégories */
+.ai-bar-chart { display: flex; flex-direction: column; gap: 10px; }
+
+.ai-bar-row {
+  display: grid;
+  grid-template-columns: 160px 1fr 36px;
+  align-items: center;
+  gap: 10px;
+}
+
+.ai-bar-label {
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ai-bar-track {
+  height: 12px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.ai-bar-fill {
+  height: 100%;
+  border-radius: 6px;
+  transition: width 0.6s ease;
+}
+
+.ai-bar-value {
+  font-size: 0.78rem;
+  color: var(--text);
+  font-weight: 600;
+  text-align: right;
+}
+
+/* Top vendeurs */
+.ai-sellers-list { display: flex; flex-direction: column; gap: 12px; }
+
+.ai-seller-row {
+  display: grid;
+  grid-template-columns: 28px 110px 1fr 80px;
+  align-items: center;
+  gap: 10px;
+}
+
+.ai-rank {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--warning);
+  text-align: center;
+}
+
+.ai-seller-addr {
+  font-size: 0.78rem;
+  color: var(--blue);
+  background: rgba(79, 140, 255, 0.08);
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.ai-seller-bar-track {
+  height: 8px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.ai-seller-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #4f8cff, #33d6a6);
+  transition: width 0.6s ease;
+}
+
+.ai-seller-count {
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-align: right;
+}
+
+/* Activité verticale */
+.ai-activity-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 120px;
+  padding-bottom: 24px;
+  position: relative;
+}
+
+.ai-activity-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  position: relative;
+  cursor: default;
+}
+
+.ai-activity-bar {
+  width: 100%;
+  background: linear-gradient(180deg, #4f8cff, #33d6a6);
+  border-radius: 4px 4px 0 0;
+  min-height: 4px;
+  transition: height 0.5s ease;
+}
+
+.ai-activity-col:hover .ai-activity-bar { opacity: 0.8; }
+
+.ai-activity-label {
+  position: absolute;
+  bottom: -20px;
+  font-size: 0.65rem;
+  color: var(--muted);
+  white-space: nowrap;
+  transform: rotate(-30deg);
+  transform-origin: top left;
+}
+
+@media (max-width: 900px) {
+  .ai-kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .ai-panels { grid-template-columns: 1fr; }
+  .ai-bar-row { grid-template-columns: 100px 1fr 30px; }
+  .ai-seller-row { grid-template-columns: 24px 90px 1fr 60px; }
+}
+
+/* ── Modal sélection de rôle ────────────────────────────────────────────── */
+
+.role-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.role-modal {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 40px;
+  max-width: 760px;
+  width: 100%;
+  text-align: center;
+}
+
+.role-modal-logo {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  margin-bottom: 16px;
+}
+
+.role-modal-header h2 {
+  font-size: 1.8rem;
+  font-weight: 900;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.role-modal-header p {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.role-modal-header code {
+  background: rgba(79,140,255,0.12);
+  color: var(--accent);
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.role-modal-sub {
+  font-size: 1rem !important;
+  color: var(--text) !important;
+  margin-top: 16px !important;
+  font-weight: 600;
+}
+
+.role-modal-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin: 28px 0 20px;
+}
+
+.role-card {
+  background: transparent;
+  border: 2px solid var(--border);
+  border-radius: 18px;
+  padding: 28px 24px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.25s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.role-card:hover {
+  transform: translateY(-4px);
+}
+
+.buyer-card:hover  { border-color: #33d6a6; box-shadow: 0 8px 32px rgba(51,214,166,0.15); }
+.seller-card:hover { border-color: #4f8cff; box-shadow: 0 8px 32px rgba(79,140,255,0.15); }
+
+.role-card-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  margin-bottom: 4px;
+}
+
+.buyer-card  .role-card-icon { background: rgba(51,214,166,0.12); color: #33d6a6; }
+.seller-card .role-card-icon { background: rgba(79,140,255,0.12);  color: #4f8cff; }
+
+.role-card h3 {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.role-card p {
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.role-card ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.role-card ul li {
+  font-size: 0.82rem;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.buyer-card  ul li i { color: #33d6a6; }
+.seller-card ul li i { color: #4f8cff; }
+
+.role-card-btn {
+  display: block;
+  margin-top: 8px;
+  padding: 10px 0;
+  border-radius: 10px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.buyer-card  .role-card-btn { background: rgba(51,214,166,0.15); color: #33d6a6; }
+.seller-card .role-card-btn { background: rgba(79,140,255,0.15);  color: #4f8cff; }
+
+.role-card:hover .role-card-btn {
+  opacity: 0.9;
+}
+
+.role-modal-note {
+  font-size: 0.78rem;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+@media (max-width: 600px) {
+  .role-modal-cards { grid-template-columns: 1fr; }
+  .role-modal { padding: 24px 16px; }
+}
+
+/* ── Mes transactions (historique personnel) ────────────────────────────── */
+
+.tx-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.tx-history-item {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  align-items: start;
+  gap: 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px 20px;
+  transition: border-color 0.2s;
+}
+
+.tx-history-item:hover {
+  border-color: rgba(79, 140, 255, 0.4);
+}
+
+.tx-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.tx-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tx-info strong {
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.tx-args {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tx-arg {
+  font-size: 0.75rem;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  color: var(--muted);
+}
+
+.tx-arg em {
+  font-style: normal;
+  color: var(--accent);
+  margin-right: 3px;
+}
+
+.tx-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.tx-date {
+  font-size: 0.8rem;
+  color: var(--text);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.tx-block {
+  font-size: 0.72rem;
+  color: var(--muted);
 }

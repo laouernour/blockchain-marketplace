@@ -1,17 +1,37 @@
-function Sidebar({ activePage, setActivePage, productsCount = 0, ordersCount = 0, delivererOrdersCount = 0, isDeliverer = false }) {
-  const allItems = [
-    { id: "marketplace", label: "Marketplace",        icon: "bi-shop-window",    hint: `${productsCount} articles`,     delivererOnly: false },
-    { id: "vendre",      label: "Vendre",              icon: "bi-plus-square",    hint: "Publier un article",            delivererOnly: false },
-    { id: "dashboard",   label: "Dashboard",           icon: "bi-grid-1x2",       hint: "Mes ventes & produits",         delivererOnly: false },
-    { id: "transactions",label: "Mes commandes",       icon: "bi-receipt",        hint: `${ordersCount} commandes`,      delivererOnly: false },
-    { id: "livraisons",  label: "Mes livraisons",      icon: "bi-truck",          hint: `${delivererOrdersCount} à livrer`, delivererOnly: true },
-    { id: "historique",  label: "Historique",          icon: "bi-clock-history",  hint: "Toutes les transactions",       delivererOnly: false },
-    { id: "blockchain",  label: "Données Blockchain",  icon: "bi-database-check", hint: "Smart contract data",           delivererOnly: false },
+function Sidebar({ activePage, setActivePage, productsCount = 0, ordersCount = 0, delivererOrdersCount = 0, userRole = "buyer", account = "", adminAddress = "", onRegisterDeliverer }) {
+  const isAdmin = account && adminAddress && account.toLowerCase() === adminAddress.toLowerCase();
+
+  const buyerItems = [
+    { id: "marketplace",    label: "Marketplace",      icon: "bi-shop-window",   hint: `${productsCount} articles` },
+    { id: "transactions",   label: "Mes commandes",    icon: "bi-receipt",       hint: `${ordersCount} commandes` },
+    { id: "mon-historique", label: "Mes transactions", icon: "bi-clock-history", hint: "Historique complet" },
   ];
 
-  const items = isDeliverer
-    ? allItems.filter(i => i.id === "livraisons")
-    : allItems.filter(i => !i.delivererOnly);
+  const sellerItems = [
+    { id: "dashboard",      label: "Dashboard",          icon: "bi-grid-1x2",       hint: "Mes ventes & produits" },
+    { id: "vendre",         label: "Vendre",             icon: "bi-plus-square",    hint: "Publier un article" },
+    { id: "mon-historique", label: "Mes transactions",   icon: "bi-clock-history",  hint: "Historique complet" },
+    { id: "historique",     label: "Historique global",  icon: "bi-list-columns",   hint: "Toutes les transactions" },
+    { id: "blockchain",     label: "Données Blockchain", icon: "bi-database-check", hint: "Smart contract data" },
+    { id: "ia",             label: "IA & Analytique",    icon: "bi-graph-up-arrow", hint: "Data mining & ML" },
+    ...(isAdmin ? [{ id: "admin", label: "Administration", icon: "bi-shield-lock", hint: "Gestion des livreurs" }] : []),
+  ];
+
+  const delivererItems = [
+    { id: "livraisons",     label: "Mes livraisons",   icon: "bi-truck",         hint: `${delivererOrdersCount} à confirmer` },
+    { id: "mon-historique", label: "Mes transactions", icon: "bi-clock-history", hint: "Historique complet" },
+  ];
+
+  const items =
+    userRole === "deliverer" ? delivererItems :
+    userRole === "seller"    ? sellerItems    :
+    buyerItems;
+
+  const roleLabel =
+    isAdmin          ? { text: "Administrateur",  icon: "bi-shield-lock", cls: "admin-badge"     } :
+    userRole === "deliverer" ? { text: "Compte Livreur",  icon: "bi-truck",       cls: "deliverer-badge" } :
+    userRole === "seller"    ? { text: "Compte Vendeur",  icon: "bi-shop",        cls: "seller-badge"    } :
+                               { text: "Compte Acheteur", icon: "bi-person",      cls: "buyer-badge"     };
 
   return (
     <aside className="sidebar">
@@ -20,28 +40,36 @@ function Sidebar({ activePage, setActivePage, productsCount = 0, ordersCount = 0
         <p className="brand-slogan">Achetez. Vendez. En toute sécurité.</p>
       </div>
 
-      {isDeliverer && (
-        <div className="role-badge deliverer-badge">
-          <i className="bi bi-truck"></i>
-          <span>Compte Livreur</span>
+      {account ? (
+        <>
+          <div className={`role-badge ${roleLabel.cls}`}>
+            <i className={`bi ${roleLabel.icon}`}></i>
+            <span>{roleLabel.text}</span>
+          </div>
+
+          <nav className="sidebar-nav">
+            {items.map((item) => (
+              <button
+                key={item.id}
+                className={activePage === item.id ? "active" : ""}
+                onClick={() => setActivePage(item.id)}
+              >
+                <i className={`bi ${item.icon}`}></i>
+                <span>
+                  <strong>{item.label}</strong>
+                  <small>{item.hint}</small>
+                </span>
+              </button>
+            ))}
+          </nav>
+
+        </>
+      ) : (
+        <div style={{ padding: "24px 16px", color: "var(--muted)", fontSize: "0.85rem", textAlign: "center" }}>
+          <i className="bi bi-wallet2" style={{ fontSize: "2rem", display: "block", marginBottom: "8px" }}></i>
+          Connecte ton wallet pour accéder à la plateforme
         </div>
       )}
-
-      <nav className="sidebar-nav">
-        {items.map((item) => (
-          <button
-            key={item.id}
-            className={activePage === item.id ? "active" : ""}
-            onClick={() => setActivePage(item.id)}
-          >
-            <i className={`bi ${item.icon}`}></i>
-            <span>
-              <strong>{item.label}</strong>
-              <small>{item.hint}</small>
-            </span>
-          </button>
-        ))}
-      </nav>
     </aside>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { parseEther, formatEther } from "ethers";
 import Sidebar from "./components/Sidebar";
+import RoleSelectionModal from "./components/RoleSelectionModal";
 import Topbar from "./components/Topbar";
 import ProductCard from "./components/ProductCard";
 import {
@@ -28,9 +29,15 @@ import {
   getTransactionHistory,
   getBlockchainData,
   checkIsDeliverer,
+  detectUserRole,
+  getStoreOfOwner,
+  requestRefund,
+  approveRefund,
+  confirmReturn,
 } from "./utils/web3";
 import { uploadFileToIPFS, uploadJsonToIPFS } from "./utils/ipfs";
-import { saveProductMetadata, getProductsMetadata, getNonce, verifySignature, registerAsDeliverer, getDelivererCandidates } from "./utils/api";
+import { ADMIN_ADDRESS } from "./config";
+import { saveProductMetadata, getProductsMetadata, getNonce, verifySignature, registerAsDeliverer, removeDeliverer, getDelivererCandidates, getAIStats } from "./utils/api";
 
 const EVENT_META = {
   OrderCreated:       { label: "Achat",              icon: "bi-cart-check",            color: "#4f8cff" },
@@ -130,7 +137,7 @@ function App() {
   const [completeDescription, setCompleteDescription] = useState("");
   const [completeCategory, setCompleteCategory] = useState("NFT & Art digital");
   const [backendStatus, setBackendStatus] = useState("checking");
-  const [adminAddress, setAdminAddress] = useState("");
+  const [adminAddress, setAdminAddress] = useState(ADMIN_ADDRESS.toLowerCase());
   const [disputeOrderId, setDisputeOrderId] = useState(null);
   const [disputeReason, setDisputeReason] = useState("Produit endommagé");
   const [disputeDescription, setDisputeDescription] = useState("");
@@ -144,9 +151,34 @@ function App() {
   const [chainData, setChainData] = useState(null);
   const [loadingChainData, setLoadingChainData] = useState(false);
   const [chainTab, setChainTab] = useState("overview");
-  const [isDelivererAccount, setIsDelivererAccount] = useState(false);
+  const [userRole, setUserRole] = useState("buyer"); // "buyer" | "seller" | "deliverer"
+  const isDelivererAccount = userRole === "deliverer";
+  const isSellerAccount    = userRole === "seller";
   const [delivererCandidates, setDelivererCandidates] = useState([]);
   const [registeredAsCandidate, setRegisteredAsCandidate] = useState(false);
+  const [aiStats, setAiStats] = useState(null);
+  const [loadingAI, setLoadingAI] = useState(false);
+  const [showRoleModal, setShowRoleModal] = useState(false);
+  const [newDelivererAddress, setNewDelivererAddress] = useState("");
+
+  const getSavedRole = (address) =>
+    localStorage.getItem(`blockbay_role_${address.toLowerCase()}`);
+
+  const saveRole = (address, role) =>
+    localStorage.setItem(`blockbay_role_${address.toLowerCase()}`, role);
+
+  const applyRole = async (role, address) => {
+    setUserRole(role);
+    saveRole(address, role);
+    setShowRoleModal(false);
+    if (role === "seller") {
+      await Promise.all([loadProducts(), loadMyStore(), loadSellerOrders(address)]);
+      setActivePage("dashboard");
+    } else {
+      await Promise.all([loadProducts(), loadOrders(address)]);
+      setActivePage("marketplace");
+    }
+  };
 
   const loadProducts = async () => {
     try {
@@ -231,6 +263,14 @@ function App() {
     setLoadingChainData(false);
   };
 
+  const loadAIStats = async () => {
+    setLoadingAI(true);
+    const result = await getAIStats();
+    if (result.success) setAiStats(result.data);
+    else setAiStats(null);
+    setLoadingAI(false);
+  };
+
   const loadMyStore = async () => {
     try {
       setLoadingStore(true);
@@ -285,16 +325,37 @@ function App() {
     localStorage.setItem("authToken", verifyResult.token);
     setAccount(connectedAccount);
     toast.success("Connecté et authentifié");
-    const delivererStatus = await checkIsDeliverer(connectedAccount);
-    setIsDelivererAccount(delivererStatus);
-    if (delivererStatus) {
+
+    // Admin : auto-détecté en priorité absolue
+    if (connectedAccount.toLowerCase() === ADMIN_ADDRESS.toLowerCase()) {
+      setUserRole("seller");
+      saveRole(connectedAccount, "seller");
+      setAdminAddress(ADMIN_ADDRESS.toLowerCase());
+      await Promise.all([loadProducts(), loadMyStore(), loadSellerOrders(connectedAccount)]);
+      setActivePage("dashboard");
+      return;
+    }
+
+    // Livreur : détection automatique
+    const isDeliv = await detectUserRole(connectedAccount);
+    if (isDeliv === "deliverer") {
+      setUserRole("deliverer");
+      saveRole(connectedAccount, "deliverer");
       await loadDelivererOrders(connectedAccount);
       setActivePage("livraisons");
-    } else {
-      await refreshAll(connectedAccount);
-      await loadSellerOrders(connectedAccount);
-      await loadDelivererOrders(connectedAccount);
+      return;
     }
+
+    // Rôle sauvegardé ?
+    const saved = getSavedRole(connectedAccount);
+    if (saved && (saved === "buyer" || saved === "seller")) {
+      await applyRole(saved, connectedAccount);
+      return;
+    }
+
+    // Aucun rôle → afficher le modal de choix
+    await loadProducts();
+    setShowRoleModal(true);
   };
 
   const disconnectWallet = () => {
@@ -302,7 +363,8 @@ function App() {
     setMyStoreId(0);
     setSellerOrders([]);
     setDelivererOrders([]);
-    setIsDelivererAccount(false);
+    setUserRole("buyer");
+    setShowRoleModal(false);
     localStorage.removeItem("authToken");
     toast("Wallet déconnecté");
   };
@@ -350,20 +412,40 @@ function App() {
               const addr = result.accounts[0];
               setAccount(addr);
 
-              // Restaurer le rôle et les données
-              const delivererStatus = await checkIsDeliverer(addr);
-              setIsDelivererAccount(delivererStatus);
+              // 1. Admin auto-détecté (priorité absolue)
+              if (addr.toLowerCase() === ADMIN_ADDRESS.toLowerCase()) {
+                setUserRole("seller");
+                saveRole(addr, "seller");
+                setAdminAddress(ADMIN_ADDRESS.toLowerCase());
+                await Promise.all([loadProducts(), loadMyStore(), loadSellerOrders(addr)]);
+                setActivePage("dashboard");
+                return;
+              }
 
-              if (delivererStatus) {
+              // 2. Livreur auto-détecté
+              const detectedRole = await detectUserRole(addr);
+              if (detectedRole === "deliverer") {
+                setUserRole("deliverer");
+                saveRole(addr, "deliverer");
                 await loadDelivererOrders(addr);
                 setActivePage("livraisons");
+                return;
+              }
+
+              // 3. Rôle sauvegardé dans localStorage
+              const saved = getSavedRole(addr);
+              if (saved === "seller") {
+                setUserRole("seller");
+                await Promise.all([loadProducts(), loadMyStore(), loadSellerOrders(addr)]);
+                setActivePage("dashboard");
+              } else if (saved === "buyer") {
+                setUserRole("buyer");
+                await Promise.all([loadProducts(), loadOrders(addr)]);
+                setActivePage("marketplace");
               } else {
-                await Promise.all([
-                  loadOrders(addr),
-                  loadMyStore(),
-                  loadSellerOrders(addr),
-                  loadDelivererOrders(addr),
-                ]);
+                // 4. Aucun rôle sauvegardé → afficher le modal
+                await loadProducts();
+                setShowRoleModal(true);
               }
             } else {
               localStorage.removeItem("authToken");
@@ -393,7 +475,7 @@ function App() {
       setSellerOrders([]);
       setOrders([]);
       setDelivererOrders([]);
-      setIsDelivererAccount(false);
+      setUserRole("buyer");
       localStorage.removeItem("authToken");
       toast("Compte changé — reconnecte ton wallet", { icon: "🔄" });
     };
@@ -405,21 +487,40 @@ function App() {
     };
   }, []);
 
-  // Quand le compte change (connexion), synchroniser le rôle livreur
+  // Quand le compte change, synchroniser le rôle depuis localStorage
   useEffect(() => {
     if (!account) return;
-    checkIsDeliverer(account).then(status => {
-      setIsDelivererAccount(status);
-      if (status) loadDelivererOrders(account);
+    detectUserRole(account).then(detected => {
+      if (detected === "deliverer") {
+        setUserRole("deliverer");
+        saveRole(account, "deliverer");
+        loadDelivererOrders(account);
+        return;
+      }
+      const saved = getSavedRole(account);
+      if (saved === "seller") {
+        setUserRole("seller");
+        loadSellerOrders(account);
+      } else if (saved === "buyer") {
+        setUserRole("buyer");
+      }
     });
   }, [account]);
 
-  // Garde : un livreur ne peut jamais accéder à une autre page que "livraisons"
+  // Charger l'historique quand on arrive sur la page "mon-historique"
   useEffect(() => {
-    if (isDelivererAccount && activePage !== "livraisons") {
-      setActivePage("livraisons");
+    if (activePage === "mon-historique" && account && txHistory.length === 0) {
+      loadTxHistory();
     }
-  }, [isDelivererAccount, activePage]);
+  }, [activePage, account]);
+
+  // Garde : rediriger vers la bonne page selon le rôle
+  useEffect(() => {
+    if (!account) return;
+    if (userRole === "deliverer" && activePage !== "livraisons" && activePage !== "mon-historique") setActivePage("livraisons");
+    if (userRole === "seller" && (activePage === "marketplace" || activePage === "transactions")) setActivePage("dashboard");
+    if (userRole === "buyer" && (activePage === "dashboard" || activePage === "vendre" || activePage === "livraisons")) setActivePage("marketplace");
+  }, [userRole, activePage, account]);
 
   const filteredProducts = useMemo(() => {
     const text = query.trim().toLowerCase();
@@ -466,9 +567,7 @@ function App() {
     }
 
     // Vérification on-chain : les livreurs ne peuvent pas créer de boutique
-    const isDeliv = await checkIsDeliverer(account);
-    if (isDeliv) {
-      setIsDelivererAccount(true);
+    if (userRole === "deliverer") {
       setActivePage("livraisons");
       toast.error("Compte livreur — création de boutique interdite");
       return;
@@ -479,7 +578,7 @@ function App() {
       return;
     }
 
-    // Upload des métadonnées boutique sur IPFS
+    // Upload des métadonnées boutique sur IPFS (optionnel — continue si réseau indisponible)
     const ipfsToast = toast.loading("Upload métadonnées boutique sur IPFS...");
     const ipfsResult = await uploadJsonToIPFS({
       name: storeName.trim(),
@@ -489,20 +588,22 @@ function App() {
     });
     toast.dismiss(ipfsToast);
 
+    const ipfsHash = ipfsResult.success ? ipfsResult.ipfsHash : "";
     if (!ipfsResult.success) {
-      toast.error("Erreur upload IPFS : " + ipfsResult.error);
-      return;
+      toast("IPFS indisponible — boutique créée sans métadonnées IPFS", { icon: "⚠️" });
     }
 
     const loading = toast.loading("Création boutique sur la blockchain...");
-    const result = await createStore(storeName.trim(), ipfsResult.ipfsHash);
+    const result = await createStore(storeName.trim(), ipfsHash);
     toast.dismiss(loading);
 
     if (result.success) {
-      toast.success("Boutique créée avec métadonnées IPFS");
+      toast.success("Boutique créée !");
       setStoreName("");
       setStoreDescription("");
       await loadMyStore();
+      setUserRole("seller");
+      setActivePage("dashboard");
     } else {
       toast.error(result.error);
     }
@@ -523,12 +624,13 @@ function App() {
       return;
     }
 
-    // Vérification on-chain : les livreurs ne peuvent pas ajouter de produit
-    const isDeliv = await checkIsDeliverer(account);
-    if (isDeliv) {
-      setIsDelivererAccount(true);
+    if (userRole === "deliverer") {
       setActivePage("livraisons");
       toast.error("Compte livreur — ajout de produit interdit");
+      return;
+    }
+    if (userRole === "buyer") {
+      toast.error("Crée une boutique d'abord pour vendre");
       return;
     }
 
@@ -734,6 +836,42 @@ function App() {
     }
   };
 
+  const requestRefundHandler = async (orderId) => {
+    const loading = toast.loading("Demande de retour en cours...");
+    const result = await requestRefund(orderId);
+    toast.dismiss(loading);
+    if (result.success) {
+      toast.success("Demande de retour envoyée au vendeur");
+      await loadOrders(account);
+    } else {
+      toast.error(result.error);
+    }
+  };
+
+  const approveRefundHandler = async (orderId) => {
+    const loading = toast.loading("Approbation du retour...");
+    const result = await approveRefund(orderId);
+    toast.dismiss(loading);
+    if (result.success) {
+      toast.success("Retour approuvé — le livreur doit confirmer la récupération");
+      await loadSellerOrders(account);
+    } else {
+      toast.error(result.error);
+    }
+  };
+
+  const confirmReturnHandler = async (orderId) => {
+    const loading = toast.loading("Confirmation du retour...");
+    const result = await confirmReturn(orderId);
+    toast.dismiss(loading);
+    if (result.success) {
+      toast.success("Retour confirmé — acheteur remboursé");
+      await loadDelivererOrders(account);
+    } else {
+      toast.error(result.error);
+    }
+  };
+
   const confirmDeliveryHandler = async (orderId) => {
     const loading = toast.loading("Confirmation livraison...");
     const result = await confirmDelivery(orderId);
@@ -745,6 +883,19 @@ function App() {
       if (!isDelivererAccount) await loadSellerOrders(account);
     } else {
       toast.error(result.error);
+    }
+  };
+
+  const registerAsDelivererHandler = async () => {
+    if (!account) { toast.error("Connecte ton wallet d'abord"); return; }
+    const result = await registerAsDeliverer(account);
+    if (result.success) {
+      toast.success("Inscrit comme livreur !");
+      setUserRole("deliverer");
+      setActivePage("livraisons");
+      await loadDelivererOrders(account);
+    } else {
+      toast.error("Erreur : " + result.error);
     }
   };
 
@@ -822,13 +973,22 @@ function App() {
 
   return (
     <div className="app-layout">
+      {showRoleModal && (
+        <RoleSelectionModal
+          account={account}
+          onSelect={(role) => applyRole(role, account)}
+        />
+      )}
       <Sidebar
         activePage={activePage}
         setActivePage={navigateTo}
         productsCount={products.length}
         ordersCount={orders.length}
         delivererOrdersCount={delivererOrders.filter(o => !o.delivered).length}
-        isDeliverer={isDelivererAccount}
+        userRole={userRole}
+        account={account}
+        adminAddress={adminAddress}
+        onRegisterDeliverer={registerAsDelivererHandler}
       />
 
       <div className="main">
@@ -842,7 +1002,7 @@ function App() {
 
         <main className="content">
 
-          {activePage === "marketplace" && !isDelivererAccount && (
+          {activePage === "marketplace" && userRole === "buyer" && (
             <section className="page-card marketplace-page">
               <div className="filters-bar">
                 <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
@@ -912,7 +1072,7 @@ function App() {
             </section>
           )}
 
-          {activePage === "vendre" && !isDelivererAccount && (
+          {activePage === "vendre" && userRole === "seller" && (
             <section className="page-card">
               <div className="page-head">
                 <div>
@@ -1081,7 +1241,7 @@ function App() {
             </section>
           )}
 
-          {activePage === "transactions" && !isDelivererAccount && (
+          {activePage === "transactions" && userRole === "buyer" && (
             <section className="page-card">
               <div className="page-head">
                 <div>
@@ -1134,16 +1294,18 @@ function App() {
                       if (order.disputeResolved && order.buyerWon) statut = "Remboursé ✓";
                       else if (order.disputeResolved && !order.buyerWon) statut = "Litige refusé";
                       else if (order.disputed) statut = "En litige";
-                      else if (order.released && !order.delivered) statut = "Remboursé ✓";
-                      else if (order.released) statut = "Terminé";
+                      else if (order.released) statut = "Remboursé ✓";
+                      else if (order.refundApproved) statut = "Retour approuvé";
+                      else if (order.refundRequested) statut = "Retour demandé";
                       else if (order.delivered) statut = `Livré · ${hoursLeft}h restantes`;
 
                       let statutClass = "pending";
                       if (order.disputeResolved && order.buyerWon) statutClass = "refunded";
                       else if (order.disputeResolved && !order.buyerWon) statutClass = "rejected";
                       else if (order.disputed) statutClass = "disputed";
-                      else if (order.released && !order.delivered) statutClass = "refunded";
-                      else if (order.released) statutClass = "ok";
+                      else if (order.released) statutClass = "refunded";
+                      else if (order.refundApproved) statutClass = "delivered";
+                      else if (order.refundRequested) statutClass = "pending";
                       else if (order.delivered) statutClass = "delivered";
 
                       return (
@@ -1159,9 +1321,15 @@ function App() {
                                 Ouvrir un litige
                               </button>
                             )}
-                            {!order.delivered && !order.released && (
-                              <button className="refund-btn" onClick={() => claimRefundHandler(order.id)} title="Disponible 7 jours après l'achat">
-                                Remboursement
+                            {!order.released && !order.disputed && !order.refundRequested && (
+                              <button className="refund-btn" onClick={() => requestRefundHandler(order.id)}>
+                                <i className="bi bi-arrow-return-left"></i>
+                                Demander retour
+                              </button>
+                            )}
+                            {!order.delivered && !order.released && !order.refundRequested && (
+                              <button className="ghost-btn" style={{fontSize:"0.78rem"}} onClick={() => claimRefundHandler(order.id)} title="Remboursement auto après 7 jours sans livraison">
+                                Remb. auto (7j)
                               </button>
                             )}
                             <button onClick={() => openTransactionDetails(order.id)}>
@@ -1272,7 +1440,7 @@ function App() {
             </section>
           )}
 
-          {activePage === "dashboard" && !isDelivererAccount && (
+          {activePage === "dashboard" && userRole === "seller" && (
             <section className="page-card">
               <div className="page-head">
                 <div>
@@ -1439,6 +1607,8 @@ function App() {
                         else if (order.disputed) statut = "En litige";
                         else if (order.released && !order.delivered) statut = "Remboursé";
                         else if (order.released) statut = "Payé";
+                        else if (order.refundApproved) statut = "Retour approuvé";
+                        else if (order.refundRequested) statut = "Retour demandé";
                         else if (order.delivered) statut = "Livré";
                         const hasDeliverer = order.deliverer && order.deliverer !== "0x0000000000000000000000000000000000000000";
                         return (
@@ -1459,7 +1629,13 @@ function App() {
                                   Libérer les fonds
                                 </button>
                               )}
-                              {!order.delivered && !order.released && (
+                              {order.refundRequested && !order.refundApproved && !order.released && (
+                                <button className="refund-btn" style={{ fontSize: "0.8rem", padding: "6px 12px" }} onClick={() => approveRefundHandler(order.id)}>
+                                  <i className="bi bi-arrow-return-left"></i>
+                                  Approuver retour
+                                </button>
+                              )}
+                              {!order.delivered && !order.released && !order.refundRequested && (
                                 hasDeliverer ? (
                                   <span className="deliverer-assigned" title={order.deliverer}>
                                     <i className="bi bi-truck"></i> {shortAddress(order.deliverer)}
@@ -1641,19 +1817,26 @@ function App() {
                     let statutClass = "pending";
                     if (order.released) { statut = "Terminé"; statutClass = "ok"; }
                     else if (order.disputed) { statut = "En litige"; statutClass = "disputed"; }
+                    else if (order.refundApproved) { statut = "Retour à récupérer"; statutClass = "pending"; }
                     else if (order.delivered) { statut = "Livré ✓"; statutClass = "delivered"; }
                     return (
-                      <div className="table-row" key={order.id} style={{ gridTemplateColumns: "0.6fr 1.4fr 1.2fr 1fr 1fr 1.2fr" }}>
+                      <div className="table-row" key={order.id} style={{ gridTemplateColumns: "0.6fr 1.4fr 1.2fr 1fr 1fr 1.4fr" }}>
                         <span>#{order.id}</span>
                         <strong>{products.find(p => p.id === order.productId)?.metadata?.name || `Produit #${order.productId}`}</strong>
                         <span title={order.buyer}>{shortAddress(order.buyer)}</span>
                         <span>{formatEther(order.amount)} ETH</span>
                         <em className={statutClass}>{statut}</em>
                         <div className="row-actions">
-                          {!order.delivered && !order.released && (
+                          {!order.delivered && !order.released && !order.refundApproved && (
                             <button className="primary-btn" style={{ fontSize: "0.82rem", padding: "6px 14px" }} onClick={() => confirmDeliveryHandler(order.id)}>
                               <i className="bi bi-check2-circle"></i>
                               Confirmer livraison
+                            </button>
+                          )}
+                          {order.refundApproved && !order.released && (
+                            <button className="refund-btn" style={{ fontSize: "0.82rem", padding: "6px 14px" }} onClick={() => confirmReturnHandler(order.id)}>
+                              <i className="bi bi-arrow-return-left"></i>
+                              Confirmer retour
                             </button>
                           )}
                         </div>
@@ -1665,7 +1848,7 @@ function App() {
             </section>
           )}
 
-          {activePage === "blockchain" && !isDelivererAccount && (
+          {activePage === "blockchain" && userRole === "seller" && (
             <section className="page-card">
               <div className="page-head">
                 <div>
@@ -1873,7 +2056,86 @@ function App() {
             </section>
           )}
 
-          {activePage === "historique" && !isDelivererAccount && (
+          {activePage === "mon-historique" && account && (
+            <section className="page-card">
+              <div className="page-head">
+                <div>
+                  <span className="eyebrow">Mon compte</span>
+                  <h1>Mes transactions</h1>
+                  <p>Toutes les opérations blockchain liées à ton adresse, avec date et heure.</p>
+                </div>
+                <button className="primary-btn" onClick={loadTxHistory}>
+                  <i className="bi bi-arrow-clockwise"></i>
+                  Actualiser
+                </button>
+              </div>
+
+              {loadingHistory ? (
+                <div className="empty-state"><div className="loader"></div><h3>Chargement...</h3></div>
+              ) : (() => {
+                const myTx = txHistory.filter(e => {
+                  const addr = account.toLowerCase();
+                  return Object.values(e.args || {}).some(v =>
+                    typeof v === "string" && v.toLowerCase() === addr
+                  );
+                });
+                if (myTx.length === 0) return (
+                  <div className="empty-state">
+                    <i className="bi bi-clock-history"></i>
+                    <h3>Aucune transaction trouvée</h3>
+                    <p>Effectue un achat ou une vente pour voir l'historique ici.</p>
+                  </div>
+                );
+                const evMeta = {
+                  OrderCreated:      { label: "Achat",               icon: "bi-cart-check",            color: "#4f8cff" },
+                  DelivererAssigned: { label: "Livreur assigné",     icon: "bi-person-check",           color: "#fbbf24" },
+                  DeliveryConfirmed: { label: "Livraison confirmée", icon: "bi-truck",                  color: "#33d6a6" },
+                  FundsReleased:     { label: "Fonds libérés",       icon: "bi-check-circle",           color: "#22c55e" },
+                  RefundClaimed:     { label: "Remboursement auto",  icon: "bi-arrow-counterclockwise", color: "#fb7185" },
+                  RefundRequested:   { label: "Retour demandé",      icon: "bi-arrow-return-left",      color: "#fb923c" },
+                  RefundApproved:    { label: "Retour approuvé",     icon: "bi-check2-all",             color: "#a3e635" },
+                  ReturnConfirmed:   { label: "Retour confirmé",     icon: "bi-box-arrow-in-left",      color: "#34d399" },
+                  DisputeOpened:     { label: "Litige ouvert",       icon: "bi-exclamation-triangle",   color: "#f97316" },
+                  DisputeResolved:   { label: "Litige résolu",       icon: "bi-shield-check",           color: "#a78bfa" },
+                  StoreCreated:      { label: "Boutique créée",      icon: "bi-shop",                   color: "#38bdf8" },
+                  ProductAdded:      { label: "Produit ajouté",      icon: "bi-box-seam",               color: "#818cf8" },
+                };
+                return (
+                  <div className="tx-history-list">
+                    {myTx.map((e, i) => {
+                      const meta = evMeta[e.event] || { label: e.event, icon: "bi-circle", color: "#94a3b8" };
+                      const date = e.timestamp
+                        ? new Date(e.timestamp * 1000).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" })
+                        : "Date inconnue";
+                      return (
+                        <div key={i} className="tx-history-item">
+                          <div className="tx-icon" style={{ background: meta.color + "22", color: meta.color }}>
+                            <i className={`bi ${meta.icon}`}></i>
+                          </div>
+                          <div className="tx-info">
+                            <strong>{meta.label}</strong>
+                            <div className="tx-args">
+                              {Object.entries(e.args || {}).map(([k, v]) => (
+                                <span key={k} className="tx-arg">
+                                  <em>{k}</em>: {String(v).length > 20 ? `${String(v).slice(0, 10)}...${String(v).slice(-6)}` : String(v)}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="tx-meta">
+                            <span className="tx-date"><i className="bi bi-calendar3"></i> {date}</span>
+                            <span className="tx-block">Bloc #{e.blockNumber}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </section>
+          )}
+
+          {activePage === "historique" && userRole === "seller" && (
             <section className="page-card">
               <div className="page-head">
                 <div>
@@ -1949,6 +2211,244 @@ function App() {
             </section>
           )}
 
+          {activePage === "ia" && userRole === "seller" && (
+            <section className="page-card">
+              <div className="page-head">
+                <div>
+                  <span className="eyebrow">Data Mining & ML</span>
+                  <h1>IA & Analytique</h1>
+                  <p>Analyse en temps réel des données blockchain — produits, commandes, vendeurs, litiges.</p>
+                </div>
+                <button className="primary-btn" onClick={loadAIStats} disabled={loadingAI}>
+                  <i className={`bi bi-arrow-clockwise${loadingAI ? " spin" : ""}`}></i>
+                  {loadingAI ? "Analyse..." : "Lancer l'analyse"}
+                </button>
+              </div>
+
+              {!aiStats && !loadingAI && (
+                <div className="empty-state">
+                  <i className="bi bi-graph-up-arrow"></i>
+                  <h3>Analyse non chargée</h3>
+                  <p>Clique sur "Lancer l'analyse" pour lire les données depuis la blockchain.</p>
+                </div>
+              )}
+
+              {loadingAI && (
+                <div className="empty-state">
+                  <div className="loader"></div>
+                  <h3>Lecture blockchain en cours...</h3>
+                  <p>Collecte et analyse des données on-chain.</p>
+                </div>
+              )}
+
+              {aiStats && !loadingAI && (() => {
+                const k = aiStats.kpis || {};
+                const topProducts  = aiStats.top_products  || [];
+                const categories   = aiStats.categories    || [];
+                const catListings  = aiStats.cat_listings  || [];
+                const topSellers   = aiStats.top_sellers   || [];
+                const disputes     = aiStats.disputes      || {};
+                const ratingDist   = aiStats.rating_distribution || {};
+                const priceStats   = aiStats.price_stats   || null;
+                return (
+                <>
+                  {/* KPIs globaux */}
+                  <div className="ai-kpi-grid">
+                    <div className="ai-kpi">
+                      <i className="bi bi-box-seam" style={{ color: "#818cf8" }}></i>
+                      <strong>{k.total_products ?? "—"}</strong>
+                      <span>Produits</span>
+                    </div>
+                    <div className="ai-kpi">
+                      <i className="bi bi-cart-check" style={{ color: "#4f8cff" }}></i>
+                      <strong>{k.total_orders ?? "—"}</strong>
+                      <span>Commandes</span>
+                    </div>
+                    <div className="ai-kpi">
+                      <i className="bi bi-currency-exchange" style={{ color: "#33d6a6" }}></i>
+                      <strong>{k.total_volume_eth ?? "—"} ETH</strong>
+                      <span>Volume total</span>
+                    </div>
+                    <div className="ai-kpi">
+                      <i className="bi bi-truck" style={{ color: "#fbbf24" }}></i>
+                      <strong>{k.delivery_rate ?? "—"}%</strong>
+                      <span>Taux livraison</span>
+                    </div>
+                    <div className="ai-kpi">
+                      <i className="bi bi-exclamation-triangle" style={{ color: "#f87171" }}></i>
+                      <strong>{k.dispute_rate ?? "—"}%</strong>
+                      <span>Taux litiges</span>
+                    </div>
+                    <div className="ai-kpi">
+                      <i className="bi bi-people" style={{ color: "#a78bfa" }}></i>
+                      <strong>{k.unique_buyers ?? "—"}</strong>
+                      <span>Acheteurs uniques</span>
+                    </div>
+                    <div className="ai-kpi">
+                      <i className="bi bi-shop" style={{ color: "#60a5fa" }}></i>
+                      <strong>{k.unique_sellers ?? "—"}</strong>
+                      <span>Vendeurs actifs</span>
+                    </div>
+                    <div className="ai-kpi">
+                      <i className="bi bi-star-fill" style={{ color: "#fbbf24" }}></i>
+                      <strong>{k.avg_rating > 0 ? `${k.avg_rating}/5` : "—"}</strong>
+                      <span>Note moyenne</span>
+                    </div>
+                  </div>
+
+                  <div className="ai-panels">
+                    {/* Top produits les plus vendus */}
+                    <div className="ai-panel">
+                      <h2><i className="bi bi-fire"></i> Top produits les plus vendus</h2>
+                      {topProducts.length === 0 ? (
+                        <p style={{ color: "var(--muted)" }}>Aucune commande enregistrée.</p>
+                      ) : (
+                        <div className="ai-bar-chart">
+                          {(() => {
+                            const max = Math.max(...topProducts.map(p => p.orders), 1);
+                            return topProducts.filter(p => p.orders > 0).map((p, i) => (
+                              <div className="ai-bar-row" key={p.id}>
+                                <span className="ai-bar-label" title={p.name}>
+                                  {p.name.length > 20 ? p.name.slice(0, 18) + "…" : p.name}
+                                </span>
+                                <div className="ai-bar-track">
+                                  <div className="ai-bar-fill" style={{
+                                    width: `${(p.orders / max) * 100}%`,
+                                    background: `hsl(${260 + i * 18}, 70%, 55%)`,
+                                  }} />
+                                </div>
+                                <span className="ai-bar-value">{p.orders} vente{p.orders > 1 ? "s" : ""} · {p.volume_eth} ETH</span>
+                              </div>
+                            ));
+                          })()}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Catégories par ventes réelles */}
+                    <div className="ai-panel">
+                      <h2><i className="bi bi-pie-chart"></i> Catégories les plus vendues</h2>
+                      {categories.length === 0 ? (
+                        <p style={{ color: "var(--muted)" }}>Aucune vente par catégorie.</p>
+                      ) : (
+                        <div className="ai-bar-chart">
+                          {(() => {
+                            const max = Math.max(...categories.map(c => c.orders), 1);
+                            return categories.map((cat, i) => (
+                              <div className="ai-bar-row" key={cat.category}>
+                                <span className="ai-bar-label" title={cat.category}>
+                                  {cat.category.length > 20 ? cat.category.slice(0, 18) + "…" : cat.category}
+                                </span>
+                                <div className="ai-bar-track">
+                                  <div className="ai-bar-fill" style={{
+                                    width: `${(cat.orders / max) * 100}%`,
+                                    background: `hsl(${180 + i * 22}, 65%, 50%)`,
+                                  }} />
+                                </div>
+                                <span className="ai-bar-value">{cat.orders} · {cat.volume_eth} ETH</span>
+                              </div>
+                            ));
+                          })()}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Top vendeurs par volume ETH */}
+                    <div className="ai-panel">
+                      <h2><i className="bi bi-trophy"></i> Top vendeurs (volume ETH)</h2>
+                      {topSellers.length === 0 ? (
+                        <p style={{ color: "var(--muted)" }}>Aucune vente enregistrée.</p>
+                      ) : (
+                        <div className="ai-sellers-list">
+                          {topSellers.map((s, i) => (
+                            <div className="ai-seller-row" key={s.address}>
+                              <span className="ai-rank">#{i + 1}</span>
+                              <code className="ai-seller-addr" title={s.address}>
+                                {s.address.slice(0, 6)}…{s.address.slice(-4)}
+                              </code>
+                              <div className="ai-seller-bar-track">
+                                <div className="ai-seller-bar-fill" style={{
+                                  width: `${(s.volume_eth / (topSellers[0].volume_eth || 1)) * 100}%`,
+                                }} />
+                              </div>
+                              <span className="ai-seller-count">{s.volume_eth} ETH · {s.orders} cmd</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Litiges */}
+                    <div className="ai-panel">
+                      <h2><i className="bi bi-shield-exclamation"></i> Litiges & résolutions</h2>
+                      <div className="ai-kpi-grid" style={{ gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                        <div className="ai-kpi" style={{ padding: "14px" }}>
+                          <strong style={{ color: "#f87171" }}>{disputes.total ?? 0}</strong>
+                          <span>Litiges ouverts</span>
+                        </div>
+                        <div className="ai-kpi" style={{ padding: "14px" }}>
+                          <strong style={{ color: "#4ade80" }}>{disputes.resolved ?? 0}</strong>
+                          <span>Résolus</span>
+                        </div>
+                        <div className="ai-kpi" style={{ padding: "14px" }}>
+                          <strong style={{ color: "#60a5fa" }}>{disputes.buyer_won ?? 0}</strong>
+                          <span>Acheteur gagne</span>
+                        </div>
+                        <div className="ai-kpi" style={{ padding: "14px" }}>
+                          <strong style={{ color: "#a78bfa" }}>{disputes.seller_won ?? 0}</strong>
+                          <span>Vendeur gagne</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Distribution des notes */}
+                    {k.total_reviews > 0 && (
+                      <div className="ai-panel">
+                        <h2><i className="bi bi-star"></i> Distribution des avis ({k.total_reviews} avis)</h2>
+                        <div className="ai-bar-chart">
+                          {[5, 4, 3, 2, 1].map(star => (
+                            <div className="ai-bar-row" key={star}>
+                              <span className="ai-bar-label">{"★".repeat(star)}</span>
+                              <div className="ai-bar-track">
+                                <div className="ai-bar-fill" style={{
+                                  width: `${((ratingDist[star] || 0) / k.total_reviews) * 100}%`,
+                                  background: star >= 4 ? "#4ade80" : star === 3 ? "#fbbf24" : "#f87171",
+                                }} />
+                              </div>
+                              <span className="ai-bar-value">{ratingDist[star] || 0}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Prix des produits */}
+                    {priceStats && (
+                      <div className="ai-panel">
+                        <h2><i className="bi bi-cash-stack"></i> Statistiques de prix</h2>
+                        <div className="ai-kpi-grid" style={{ gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                          <div className="ai-kpi" style={{ padding: "14px" }}>
+                            <strong>{priceStats.min} ETH</strong><span>Prix min</span>
+                          </div>
+                          <div className="ai-kpi" style={{ padding: "14px" }}>
+                            <strong>{priceStats.max} ETH</strong><span>Prix max</span>
+                          </div>
+                          <div className="ai-kpi" style={{ padding: "14px" }}>
+                            <strong>{priceStats.avg} ETH</strong><span>Prix moyen</span>
+                          </div>
+                          <div className="ai-kpi" style={{ padding: "14px" }}>
+                            <strong>{priceStats.median} ETH</strong><span>Médiane</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </>
+                );
+              })()}
+            </section>
+          )}
+
           {activePage === "transactionDetails" && selectedTxDetails && (
             <section className="page-card">
               <div className="page-head">
@@ -1973,6 +2473,77 @@ function App() {
               </div>
             </section>
           )}
+          {activePage === "admin" && account.toLowerCase() === adminAddress && (
+            <section className="page-card">
+              <div className="page-head">
+                <div>
+                  <span className="eyebrow">Administration</span>
+                  <h1>Gestion des livreurs</h1>
+                  <p>Définissez les comptes autorisés à effectuer des livraisons sur la plateforme.</p>
+                </div>
+              </div>
+
+              <div className="form-panel" style={{ maxWidth: 520 }}>
+                <h2>Ajouter un livreur</h2>
+                <label>Adresse du compte livreur</label>
+                <input
+                  type="text"
+                  placeholder="0x..."
+                  value={newDelivererAddress}
+                  onChange={e => setNewDelivererAddress(e.target.value)}
+                />
+                <button className="primary-btn w-100" onClick={async () => {
+                  if (!newDelivererAddress.trim()) { toast.error("Adresse obligatoire"); return; }
+                  const result = await registerAsDeliverer(newDelivererAddress.trim());
+                  if (result.success) {
+                    toast.success("Livreur ajouté");
+                    setNewDelivererAddress("");
+                    const updated = await getDelivererCandidates();
+                    setDelivererCandidates(updated);
+                  } else {
+                    toast.error(result.error || "Erreur");
+                  }
+                }}>
+                  <i className="bi bi-person-plus"></i> Ajouter
+                </button>
+              </div>
+
+              <div style={{ marginTop: 32 }}>
+                <h2 style={{ marginBottom: 16 }}>Livreurs enregistrés ({delivererCandidates.length})</h2>
+                {delivererCandidates.length === 0 ? (
+                  <div className="empty-state">
+                    <i className="bi bi-truck"></i>
+                    <h3>Aucun livreur enregistré</h3>
+                  </div>
+                ) : (
+                  <div className="table-panel">
+                    <div className="table-head" style={{ gridTemplateColumns: "1fr auto" }}>
+                      <span>Adresse</span>
+                      <span>Action</span>
+                    </div>
+                    {delivererCandidates.map(d => (
+                      <div className="table-row" key={d.address} style={{ gridTemplateColumns: "1fr auto" }}>
+                        <code style={{ fontSize: "0.85rem" }}>{d.address}</code>
+                        <button className="refund-btn" style={{ fontSize: "0.8rem", padding: "5px 12px" }} onClick={async () => {
+                          const result = await removeDeliverer(d.address);
+                          if (result.success) {
+                            toast.success("Livreur supprimé");
+                            const updated = await getDelivererCandidates();
+                            setDelivererCandidates(updated);
+                          } else {
+                            toast.error(result.error || "Erreur");
+                          }
+                        }}>
+                          <i className="bi bi-trash"></i> Supprimer
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
         </main>
       </div>
     </div>

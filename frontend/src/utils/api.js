@@ -69,6 +69,27 @@ export const registerAsDeliverer = async (address) => {
   }
 };
 
+export const getAIStats = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/ai/stats`);
+    return await response.json();
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+};
+
+export const removeDeliverer = async (address) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/deliverers/${address}`, {
+      method: "DELETE",
+      headers: { ...authHeaders() },
+    });
+    return await response.json();
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+};
+
 export const getDelivererCandidates = async () => {
   try {
     const response = await fetch(`${API_BASE_URL}/deliverers`);
@@ -78,6 +99,7 @@ export const getDelivererCandidates = async () => {
     return [];
   }
 };
+
 
 export const saveProductMetadata = async (productData) => {
   try {

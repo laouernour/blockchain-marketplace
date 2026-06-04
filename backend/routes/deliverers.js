@@ -2,14 +2,6 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../config/db");
 
-// Créer la table si elle n'existe pas
-pool.query(`
-  CREATE TABLE IF NOT EXISTS deliverer_candidates (
-    address VARCHAR(42) PRIMARY KEY,
-    registered_at TIMESTAMP DEFAULT NOW()
-  )
-`).catch(console.error);
-
 // S'inscrire comme livreur disponible
 router.post("/register", async (req, res) => {
   const { address } = req.body;
@@ -28,7 +20,7 @@ router.post("/register", async (req, res) => {
 });
 
 // Récupérer tous les livreurs disponibles
-router.get("/", async (req, res) => {
+router.get(["", "/"], async (req, res) => {
   try {
     const result = await pool.query(
       "SELECT address FROM deliverer_candidates ORDER BY registered_at DESC"
