@@ -57,7 +57,7 @@ router.post("/verify", (req, res) => {
     const token = jwt.sign(
       { address: addr },
       process.env.JWT_SECRET,
-      { expiresIn: "30s" }
+      { expiresIn: "5h" }
     );
 
     res.json({ success: true, token });
