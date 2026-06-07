@@ -69,6 +69,8 @@ contract Marketplace {
     mapping(address => uint256[]) public orderIdsBySeller;
     mapping(address => uint256[]) public orderIdsByDeliverer;
     mapping(address => bool)     public isDeliverer;
+    mapping(address => bool)     public blacklisted;
+    mapping(uint256 => bool)     public featuredProduct;
 
     mapping(uint256 => Review[]) public reviewsByProduct;
     mapping(uint256 => bool)     public reviewedOrder;
@@ -89,6 +91,10 @@ contract Marketplace {
     event RefundRequested(uint256 indexed orderId, address indexed buyer);
     event RefundApproved(uint256 indexed orderId, address indexed seller);
     event ReturnConfirmed(uint256 indexed orderId, address indexed deliverer, uint256 amount);
+    event AddressBlacklisted(address indexed addr);
+    event AddressUnblacklisted(address indexed addr);
+    event ProductRemoved(uint256 indexed productId);
+    event ProductFeatured(uint256 indexed productId, bool featured);
 
     constructor(address _admin) {
         admin = _admin != address(0) ? _admin : msg.sender;
@@ -106,10 +112,38 @@ contract Marketplace {
 
     // ─── Boutique ────────────────────────────────────────────────────────────
 
+    // ─── Admin ───────────────────────────────────────────────────────────────
+
+    function blacklistAddress(address _addr) external onlyAdmin {
+        require(_addr != admin, "Cannot blacklist admin");
+        blacklisted[_addr] = true;
+        emit AddressBlacklisted(_addr);
+    }
+
+    function unblacklistAddress(address _addr) external onlyAdmin {
+        blacklisted[_addr] = false;
+        emit AddressUnblacklisted(_addr);
+    }
+
+    function removeProduct(uint256 _productId) external onlyAdmin {
+        require(products[_productId].exists, "Product not found");
+        products[_productId].exists = false;
+        emit ProductRemoved(_productId);
+    }
+
+    function featureProduct(uint256 _productId, bool _featured) external onlyAdmin {
+        require(products[_productId].exists, "Product not found");
+        featuredProduct[_productId] = _featured;
+        emit ProductFeatured(_productId, _featured);
+    }
+
+    // ─── Boutique ────────────────────────────────────────────────────────────
+
     function createStore(string calldata _name, string calldata _ipfsHash) external {
         require(bytes(_name).length > 0, "Store name required");
         require(storeOfOwner[msg.sender] == 0, "Store already exists");
         require(!isDeliverer[msg.sender], "Deliverers cannot create stores");
+        require(!blacklisted[msg.sender], "Address blacklisted");
 
         storeCount++;
         stores[storeCount] = Store({ id: storeCount, owner: msg.sender, name: _name, ipfsHash: _ipfsHash, exists: true });
@@ -151,6 +185,7 @@ contract Marketplace {
         require(msg.value == p.price, "Incorrect price");
         require(msg.sender != p.seller, "Seller cannot buy own product");
         require(!isDeliverer[msg.sender], "Deliverers cannot buy products");
+        require(!blacklisted[msg.sender], "Address blacklisted");
 
         p.stock--;
         orderCount++;

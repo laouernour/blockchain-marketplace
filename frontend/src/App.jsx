@@ -34,10 +34,15 @@ import {
   requestRefund,
   approveRefund,
   confirmReturn,
+  blacklistAddress,
+  unblacklistAddress,
+  removeProduct,
+  featureProduct,
+  isBlacklisted,
 } from "./utils/web3";
 import { uploadFileToIPFS, uploadJsonToIPFS } from "./utils/ipfs";
 import { ADMIN_ADDRESS } from "./config";
-import { saveProductMetadata, getProductsMetadata, getNonce, verifySignature, registerAsDeliverer, removeDeliverer, getDelivererCandidates, getAIStats } from "./utils/api";
+import { saveProductMetadata, getProductsMetadata, getNonce, verifySignature, registerAsDeliverer, removeDeliverer, getDelivererCandidates, getAIStats, getAnomalies } from "./utils/api";
 
 const EVENT_META = {
   OrderCreated:       { label: "Achat",              icon: "bi-cart-check",            color: "#4f8cff" },
@@ -151,13 +156,18 @@ function App() {
   const [chainData, setChainData] = useState(null);
   const [loadingChainData, setLoadingChainData] = useState(false);
   const [chainTab, setChainTab] = useState("overview");
-  const [userRole, setUserRole] = useState("buyer"); // "buyer" | "seller" | "deliverer"
+  const [userRole, setUserRole] = useState("buyer"); // "buyer" | "seller" | "deliverer" | "admin"
   const isDelivererAccount = userRole === "deliverer";
   const isSellerAccount    = userRole === "seller";
+  const isAdminAccount     = userRole === "admin";
+  const [blacklistInput, setBlacklistInput] = useState("");
+  const [allOrders, setAllOrders] = useState([]);
   const [delivererCandidates, setDelivererCandidates] = useState([]);
   const [registeredAsCandidate, setRegisteredAsCandidate] = useState(false);
   const [aiStats, setAiStats] = useState(null);
   const [loadingAI, setLoadingAI] = useState(false);
+  const [anomalyData, setAnomalyData] = useState(null);
+  const [loadingAnomalies, setLoadingAnomalies] = useState(false);
   const [showRoleModal, setShowRoleModal] = useState(false);
   const [newDelivererAddress, setNewDelivererAddress] = useState("");
 
@@ -249,6 +259,46 @@ function App() {
     setDelivererOrders(data);
   };
 
+  const loadAllOrders = async () => {
+    try {
+      const data = await getBlockchainData();
+      if (data) setAllOrders(data.orders || []);
+    } catch { setAllOrders([]); }
+  };
+
+  const blacklistHandler = async (address) => {
+    if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
+      toast.error("Adresse invalide"); return;
+    }
+    const loading = toast.loading("Blacklist en cours...");
+    const result = await blacklistAddress(address);
+    toast.dismiss(loading);
+    if (result.success) { toast.success("Adresse blacklistée"); setBlacklistInput(""); }
+    else toast.error(result.error);
+  };
+
+  const unblacklistHandler = async (address) => {
+    const loading = toast.loading("Déblocage en cours...");
+    const result = await unblacklistAddress(address);
+    toast.dismiss(loading);
+    if (result.success) toast.success("Adresse débloquée");
+    else toast.error(result.error);
+  };
+
+  const removeProductHandler = async (productId) => {
+    const loading = toast.loading("Suppression du produit...");
+    const result = await removeProduct(productId);
+    toast.dismiss(loading);
+    if (result.success) { toast.success("Produit supprimé"); await loadProducts(); }
+    else toast.error(result.error);
+  };
+
+  const featureProductHandler = async (productId, featured) => {
+    const result = await featureProduct(productId, featured);
+    if (result.success) { toast.success(featured ? "Produit mis en avant" : "Mise en avant retirée"); await loadProducts(); }
+    else toast.error(result.error);
+  };
+
   const loadTxHistory = async () => {
     setLoadingHistory(true);
     const data = await getTransactionHistory();
@@ -269,6 +319,14 @@ function App() {
     if (result.success) setAiStats(result.data);
     else setAiStats(null);
     setLoadingAI(false);
+  };
+
+  const loadAnomalies = async () => {
+    setLoadingAnomalies(true);
+    const result = await getAnomalies();
+    if (result.success) setAnomalyData(result.data);
+    else setAnomalyData(null);
+    setLoadingAnomalies(false);
   };
 
   const loadMyStore = async () => {
@@ -328,11 +386,11 @@ function App() {
 
     // Admin : auto-détecté en priorité absolue
     if (connectedAccount.toLowerCase() === ADMIN_ADDRESS.toLowerCase()) {
-      setUserRole("seller");
-      saveRole(connectedAccount, "seller");
+      setUserRole("admin");
+      saveRole(connectedAccount, "admin");
       setAdminAddress(ADMIN_ADDRESS.toLowerCase());
-      await Promise.all([loadProducts(), loadMyStore(), loadSellerOrders(connectedAccount)]);
-      setActivePage("dashboard");
+      await Promise.all([loadProducts(), loadAllOrders()]);
+      setActivePage("admin-dashboard");
       return;
     }
 
@@ -414,11 +472,11 @@ function App() {
 
               // 1. Admin auto-détecté (priorité absolue)
               if (addr.toLowerCase() === ADMIN_ADDRESS.toLowerCase()) {
-                setUserRole("seller");
-                saveRole(addr, "seller");
+                setUserRole("admin");
+                saveRole(addr, "admin");
                 setAdminAddress(ADMIN_ADDRESS.toLowerCase());
-                await Promise.all([loadProducts(), loadMyStore(), loadSellerOrders(addr)]);
-                setActivePage("dashboard");
+                await Promise.all([loadProducts(), loadAllOrders()]);
+                setActivePage("admin-dashboard");
                 return;
               }
 
@@ -514,11 +572,19 @@ function App() {
     }
   }, [activePage, account]);
 
+  // Charger les anomalies automatiquement à l'entrée sur la page
+  useEffect(() => {
+    if (activePage === "anomalies" && userRole === "admin") {
+      loadAnomalies();
+    }
+  }, [activePage]);
+
   // Garde : rediriger vers la bonne page selon le rôle
   useEffect(() => {
     if (!account) return;
+    if (userRole === "admin" && activePage !== "admin-dashboard" && activePage !== "ia" && activePage !== "blockchain" && activePage !== "historique" && activePage !== "anomalies") setActivePage("admin-dashboard");
     if (userRole === "deliverer" && activePage !== "livraisons" && activePage !== "mon-historique") setActivePage("livraisons");
-    if (userRole === "seller" && (activePage === "marketplace" || activePage === "transactions")) setActivePage("dashboard");
+    if (userRole === "seller" && (activePage === "marketplace" || activePage === "transactions" || activePage === "ia" || activePage === "historique" || activePage === "blockchain")) setActivePage("dashboard");
     if (userRole === "buyer" && (activePage === "dashboard" || activePage === "vendre" || activePage === "livraisons")) setActivePage("marketplace");
   }, [userRole, activePage, account]);
 
@@ -1440,6 +1506,116 @@ function App() {
             </section>
           )}
 
+          {activePage === "seller-analytics" && userRole === "seller" && (
+            <section className="page-card">
+              <div className="page-head">
+                <div>
+                  <span className="eyebrow">Mes analytiques</span>
+                  <h1>Performance de mes produits</h1>
+                </div>
+                <button className="primary-btn" onClick={() => loadSellerOrders(account)}>
+                  <i className="bi bi-arrow-clockwise"></i> Actualiser
+                </button>
+              </div>
+
+              {/* KPIs */}
+              <div className="metrics-grid">
+                <div>
+                  <span>Revenus totaux</span>
+                  <strong>
+                    {sellerOrders.filter(o => o.released && !(o.disputeResolved && o.buyerWon))
+                      .reduce((s, o) => s + Number(formatEther(o.amount)), 0).toFixed(4)} ETH
+                  </strong>
+                </div>
+                <div>
+                  <span>Revenus en attente</span>
+                  <strong>
+                    {sellerOrders.filter(o => !o.released && !o.disputed)
+                      .reduce((s, o) => s + Number(formatEther(o.amount)), 0).toFixed(4)} ETH
+                  </strong>
+                </div>
+                <div>
+                  <span>Panier moyen</span>
+                  <strong>
+                    {sellerOrders.length > 0
+                      ? (sellerOrders.reduce((s, o) => s + Number(formatEther(o.amount)), 0) / sellerOrders.length).toFixed(4)
+                      : "0.0000"} ETH
+                  </strong>
+                </div>
+                <div>
+                  <span>Taux de litige</span>
+                  <strong>
+                    {sellerOrders.length > 0
+                      ? ((sellerOrders.filter(o => o.disputed).length / sellerOrders.length) * 100).toFixed(1)
+                      : "0.0"}%
+                  </strong>
+                </div>
+              </div>
+
+              {/* Performance par produit */}
+              <h2 style={{ margin: "28px 0 16px", fontWeight: 900 }}>Performance par produit</h2>
+              {products.filter(p => p.seller?.toLowerCase() === account?.toLowerCase()).length === 0 ? (
+                <div className="empty-state"><i className="bi bi-box"></i><h3>Aucun produit publié</h3></div>
+              ) : (
+                <div className="table-panel">
+                  <div className="table-head" style={{ gridTemplateColumns: "0.5fr 1.5fr 0.8fr 0.8fr 0.8fr 0.8fr 0.8fr" }}>
+                    <span>ID</span>
+                    <span>Produit</span>
+                    <span>Prix</span>
+                    <span>Stock</span>
+                    <span>Ventes</span>
+                    <span>Revenus</span>
+                    <span>Note moy.</span>
+                  </div>
+                  {products.filter(p => p.seller?.toLowerCase() === account?.toLowerCase()).map(p => {
+                    const productOrders = sellerOrders.filter(o => o.productId === p.id);
+                    const revenue = productOrders.filter(o => o.released && !(o.disputeResolved && o.buyerWon))
+                      .reduce((s, o) => s + Number(formatEther(o.amount)), 0);
+                    const stockStatus = p.stock === 0 ? "refunded" : p.stock < 3 ? "pending" : "ok";
+                    return (
+                      <div className="table-row" key={p.id} style={{ gridTemplateColumns: "0.5fr 1.5fr 0.8fr 0.8fr 0.8fr 0.8fr 0.8fr" }}>
+                        <span>#{p.id}</span>
+                        <strong>{p.metadata?.name || `Produit #${p.id}`}</strong>
+                        <span>{p.price} ETH</span>
+                        <em className={stockStatus}>{p.stock === 0 ? "Rupture" : p.stock < 3 ? `${p.stock} ⚠️` : p.stock}</em>
+                        <span>{productOrders.length}</span>
+                        <span>{revenue.toFixed(4)} ETH</span>
+                        <span>{p.averageRating > 0 ? `★ ${p.averageRating}/5` : "—"}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Alertes stock */}
+              {products.filter(p => p.seller?.toLowerCase() === account?.toLowerCase() && p.stock === 0).length > 0 && (
+                <>
+                  <h2 style={{ margin: "28px 0 16px", fontWeight: 900, color: "#ef4444" }}>
+                    <i className="bi bi-exclamation-triangle"></i> Produits en rupture
+                  </h2>
+                  {products.filter(p => p.seller?.toLowerCase() === account?.toLowerCase() && p.stock === 0).map(p => (
+                    <div key={p.id} className="incomplete-banner">
+                      <i className="bi bi-box-seam"></i>
+                      <div>
+                        <strong>{p.metadata?.name || `Produit #${p.id}`}</strong>
+                        <p>Stock épuisé — pensez à réapprovisionner</p>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+
+              {/* Répartition commandes */}
+              <h2 style={{ margin: "28px 0 16px", fontWeight: 900 }}>Répartition des commandes</h2>
+              <div className="metrics-grid">
+                <div><span>En attente livreur</span><strong>{sellerOrders.filter(o => !o.delivered && !o.released && o.deliverer === "0x0000000000000000000000000000000000000000").length}</strong></div>
+                <div><span>En cours livraison</span><strong>{sellerOrders.filter(o => !o.delivered && o.deliverer !== "0x0000000000000000000000000000000000000000").length}</strong></div>
+                <div><span>Livrées</span><strong>{sellerOrders.filter(o => o.delivered).length}</strong></div>
+                <div><span>En litige</span><strong>{sellerOrders.filter(o => o.disputed).length}</strong></div>
+              </div>
+            </section>
+          )}
+
           {activePage === "dashboard" && userRole === "seller" && (
             <section className="page-card">
               <div className="page-head">
@@ -1734,6 +1910,126 @@ function App() {
             </section>
           )}
 
+          {activePage === "admin-dashboard" && isAdminAccount && (
+            <section className="page-card">
+              <div className="page-head">
+                <div>
+                  <span className="eyebrow">Administration</span>
+                  <h1>Dashboard Admin</h1>
+                </div>
+                <button className="primary-btn" onClick={() => Promise.all([loadProducts(), loadAllOrders(), getDelivererCandidates().then(d => setDelivererCandidates(d))])}>
+                  <i className="bi bi-arrow-clockwise"></i> Actualiser
+                </button>
+              </div>
+
+              {/* KPIs plateforme */}
+              <div className="metrics-grid">
+                <div><span>Total produits</span><strong>{products.length}</strong></div>
+                <div><span>Total commandes</span><strong>{allOrders.length}</strong></div>
+                <div><span>Litiges en cours</span><strong>{allOrders.filter(o => o.disputed && !o.released).length}</strong></div>
+                <div><span>Volume total</span><strong>{allOrders.reduce((s, o) => s + Number(o.amount || 0), 0).toFixed(4)} ETH</strong></div>
+              </div>
+
+              {/* Litiges à résoudre */}
+              <h2 style={{ margin: "28px 0 16px", fontWeight: 900, color: "var(--warning)" }}>
+                <i className="bi bi-shield-exclamation"></i> Litiges à résoudre
+              </h2>
+              {allOrders.filter(o => o.disputed && !o.released).length === 0 ? (
+                <div className="empty-state"><i className="bi bi-check-circle"></i><h3>Aucun litige en attente</h3></div>
+              ) : (
+                allOrders.filter(o => o.disputed && !o.released).map(order => (
+                  <div key={order.id} className="dispute-admin-card">
+                    <div className="dispute-admin-header">
+                      <span className="dispute-id">Commande #{order.id}</span>
+                      <span title={order.buyer}>{shortAddress(order.buyer)}</span>
+                      <span className="dispute-amount">{Number(order.amount).toFixed(4)} ETH</span>
+                    </div>
+                    <div className="dispute-actions">
+                      <button className="refund-btn" onClick={() => resolveDisputeHandler(order.id, true)}>
+                        <i className="bi bi-arrow-counterclockwise"></i> Rembourser acheteur
+                      </button>
+                      <button className="primary-btn" style={{ fontSize: "0.85rem" }} onClick={() => resolveDisputeHandler(order.id, false)}>
+                        <i className="bi bi-check-circle"></i> Payer vendeur
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+
+              {/* Gestion produits */}
+              <h2 style={{ margin: "28px 0 16px", fontWeight: 900 }}>
+                <i className="bi bi-box-seam"></i> Gestion des produits
+              </h2>
+              <div className="table-panel">
+                <div className="table-head" style={{ gridTemplateColumns: "0.5fr 1.5fr 1fr 1fr 1.5fr" }}>
+                  <span>ID</span><span>Nom</span><span>Prix</span><span>Stock</span><span>Actions</span>
+                </div>
+                {products.map(p => (
+                  <div className="table-row" key={p.id} style={{ gridTemplateColumns: "0.5fr 1.5fr 1fr 1fr 1.5fr" }}>
+                    <span>#{p.id}</span>
+                    <strong>{p.metadata?.name || `Produit #${p.id}`}</strong>
+                    <span>{p.price} ETH</span>
+                    <span>{p.stock}</span>
+                    <div className="row-actions">
+                      <button className="ghost-btn" style={{ fontSize: "0.78rem" }} onClick={() => featureProductHandler(p.id, true)}>
+                        <i className="bi bi-star"></i> Mettre en avant
+                      </button>
+                      <button className="refund-btn" style={{ fontSize: "0.78rem" }} onClick={() => removeProductHandler(p.id)}>
+                        <i className="bi bi-trash"></i> Supprimer
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Blacklist */}
+              <h2 style={{ margin: "28px 0 16px", fontWeight: 900, color: "#ef4444" }}>
+                <i className="bi bi-ban"></i> Blacklist adresse
+              </h2>
+              <div className="form-panel" style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                <input
+                  type="text"
+                  placeholder="Adresse Ethereum (0x...)"
+                  value={blacklistInput}
+                  onChange={e => setBlacklistInput(e.target.value)}
+                  style={{ flex: 1 }}
+                />
+                <button className="refund-btn" onClick={() => blacklistHandler(blacklistInput)}>
+                  <i className="bi bi-ban"></i> Blacklister
+                </button>
+                <button className="ghost-btn" onClick={() => unblacklistHandler(blacklistInput)}>
+                  <i className="bi bi-check-circle"></i> Débloquer
+                </button>
+              </div>
+
+              {/* Gestion livreurs */}
+              <h2 style={{ margin: "28px 0 16px", fontWeight: 900 }}>
+                <i className="bi bi-truck"></i> Gestion des livreurs
+              </h2>
+              {delivererCandidates.length === 0 ? (
+                <div className="empty-state"><i className="bi bi-person-x"></i><h3>Aucun livreur inscrit</h3></div>
+              ) : (
+                <div className="table-panel">
+                  <div className="table-head" style={{ gridTemplateColumns: "2fr 1fr" }}>
+                    <span>Adresse</span><span>Action</span>
+                  </div>
+                  {delivererCandidates.map(d => (
+                    <div className="table-row" key={d.address} style={{ gridTemplateColumns: "2fr 1fr" }}>
+                      <code style={{ fontSize: "0.8rem" }}>{d.address}</code>
+                      <button className="refund-btn" style={{ fontSize: "0.78rem" }} onClick={async () => {
+                        await removeDeliverer(d.address);
+                        getDelivererCandidates().then(data => setDelivererCandidates(data));
+                        toast.success("Livreur supprimé");
+                      }}>
+                        <i className="bi bi-trash"></i> Supprimer
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
           {activePage === "livraisons" && (
             <section className="page-card">
               <div className="page-head">
@@ -1848,7 +2144,7 @@ function App() {
             </section>
           )}
 
-          {activePage === "blockchain" && userRole === "seller" && (
+          {activePage === "blockchain" && (userRole === "seller" || userRole === "admin") && (
             <section className="page-card">
               <div className="page-head">
                 <div>
@@ -2135,7 +2431,7 @@ function App() {
             </section>
           )}
 
-          {activePage === "historique" && userRole === "seller" && (
+          {activePage === "historique" && (userRole === "seller" || userRole === "admin") && (
             <section className="page-card">
               <div className="page-head">
                 <div>
@@ -2211,7 +2507,7 @@ function App() {
             </section>
           )}
 
-          {activePage === "ia" && userRole === "seller" && (
+          {activePage === "ia" && (userRole === "seller" || userRole === "admin") && (
             <section className="page-card">
               <div className="page-head">
                 <div>
@@ -2541,6 +2837,136 @@ function App() {
                   </div>
                 )}
               </div>
+            </section>
+          )}
+
+          {activePage === "anomalies" && userRole === "admin" && (
+            <section className="page-card">
+              <div className="page-head">
+                <div>
+                  <span className="eyebrow">Isolation Forest · ML</span>
+                  <h1>Détection d'anomalies</h1>
+                  <p>Détection automatique de comportements suspects chez les vendeurs et acheteurs via modèles Isolation Forest.</p>
+                </div>
+                <button className="primary-btn" onClick={loadAnomalies} disabled={loadingAnomalies}>
+                  <i className={`bi bi-arrow-clockwise${loadingAnomalies ? " spin" : ""}`}></i>
+                  {loadingAnomalies ? "Analyse..." : "Lancer la détection"}
+                </button>
+              </div>
+
+              {!anomalyData && !loadingAnomalies && (
+                <div className="empty-state">
+                  <i className="bi bi-shield-exclamation"></i>
+                  <h3>Aucune analyse lancée</h3>
+                  <p>Clique sur "Lancer la détection" pour analyser les données blockchain.</p>
+                </div>
+              )}
+
+              {loadingAnomalies && (
+                <div className="empty-state">
+                  <div className="loader"></div>
+                  <h3>Analyse en cours...</h3>
+                  <p>Les modèles ML analysent les comportements on-chain.</p>
+                </div>
+              )}
+
+              {anomalyData && !loadingAnomalies && (() => {
+                const s = anomalyData.summary || {};
+                const anomalies = anomalyData.anomalies || [];
+                return (
+                  <>
+                    {/* Résumé */}
+                    <div className="ai-kpi-grid" style={{ marginBottom: "28px" }}>
+                      <div className="ai-kpi">
+                        <i className="bi bi-exclamation-triangle-fill" style={{ color: "#f97316" }}></i>
+                        <strong>{s.total ?? 0}</strong>
+                        <span>Anomalies totales</span>
+                      </div>
+                      <div className="ai-kpi">
+                        <i className="bi bi-shop" style={{ color: "#818cf8" }}></i>
+                        <strong>{s.sellers ?? 0}</strong>
+                        <span>Vendeurs suspects</span>
+                      </div>
+                      <div className="ai-kpi">
+                        <i className="bi bi-person" style={{ color: "#4f8cff" }}></i>
+                        <strong>{s.buyers ?? 0}</strong>
+                        <span>Acheteurs suspects</span>
+                      </div>
+                      <div className="ai-kpi">
+                        <i className="bi bi-shield-fill-x" style={{ color: "#ef4444" }}></i>
+                        <strong>{s.high ?? 0}</strong>
+                        <span>Haute sévérité</span>
+                      </div>
+                      <div className="ai-kpi">
+                        <i className="bi bi-shield-fill-exclamation" style={{ color: "#fbbf24" }}></i>
+                        <strong>{s.medium ?? 0}</strong>
+                        <span>Sévérité moyenne</span>
+                      </div>
+                    </div>
+
+                    {anomalies.length === 0 ? (
+                      <div className="empty-state">
+                        <i className="bi bi-shield-check" style={{ color: "#22c55e" }}></i>
+                        <h3>Aucune anomalie détectée</h3>
+                        <p>Tous les vendeurs et acheteurs présentent un comportement normal.</p>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                        {anomalies.map((a, idx) => (
+                          <div
+                            key={idx}
+                            style={{
+                              background: "var(--card-bg, #1e293b)",
+                              border: `1px solid ${a.severity === "high" ? "#ef4444" : "#fbbf24"}`,
+                              borderRadius: "10px",
+                              padding: "16px 20px",
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: "8px",
+                            }}
+                          >
+                            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                              <span style={{
+                                background: a.severity === "high" ? "#ef444422" : "#fbbf2422",
+                                color:      a.severity === "high" ? "#ef4444"   : "#fbbf24",
+                                borderRadius: "6px", padding: "2px 10px", fontSize: "0.75rem", fontWeight: 700,
+                              }}>
+                                {a.severity === "high" ? "HAUTE" : "MOYENNE"}
+                              </span>
+                              <span style={{
+                                background: a.entity === "seller" ? "#818cf822" : "#4f8cff22",
+                                color:      a.entity === "seller" ? "#818cf8"   : "#4f8cff",
+                                borderRadius: "6px", padding: "2px 10px", fontSize: "0.75rem", fontWeight: 700,
+                              }}>
+                                <i className={`bi ${a.entity === "seller" ? "bi-shop" : "bi-person"}`}></i>{" "}
+                                {a.entity === "seller" ? "Vendeur" : "Acheteur"}
+                              </span>
+                              <code style={{ fontSize: "0.85rem", color: "var(--muted, #94a3b8)" }}>{a.label}</code>
+                              <span style={{ marginLeft: "auto", fontSize: "0.78rem", color: "var(--muted, #94a3b8)" }}>
+                                score : {a.anomaly_score}
+                              </span>
+                            </div>
+                            <p style={{ margin: 0, fontSize: "0.9rem" }}>{a.description}</p>
+                            <details style={{ fontSize: "0.82rem", color: "var(--muted, #94a3b8)" }}>
+                              <summary style={{ cursor: "pointer" }}>Détails des métriques</summary>
+                              <div style={{ marginTop: "8px", display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                                {Object.entries(a.features || {}).map(([k, v]) => (
+                                  <span key={k} style={{
+                                    background: "#ffffff0a", borderRadius: "6px",
+                                    padding: "3px 10px", fontSize: "0.78rem",
+                                  }}>
+                                    <strong>{k}</strong>: {typeof v === "number" ? v.toFixed(4) : v}
+                                  </span>
+                                ))}
+                              </div>
+                            </details>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </section>
           )}
 

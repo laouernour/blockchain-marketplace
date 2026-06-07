@@ -28,6 +28,29 @@ export const signMessage = async (message) => {
 };
 
 // Connexion wallet
+const HARDHAT_CHAIN_ID = "0x7a69"; // 31337
+
+const switchToHardhat = async () => {
+  try {
+    await window.ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: HARDHAT_CHAIN_ID }],
+    });
+  } catch (switchError) {
+    if (switchError.code === 4902) {
+      await window.ethereum.request({
+        method: "wallet_addEthereumChain",
+        params: [{
+          chainId: HARDHAT_CHAIN_ID,
+          chainName: "Hardhat Local",
+          rpcUrls: ["http://127.0.0.1:8545"],
+          nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
+        }],
+      });
+    }
+  }
+};
+
 export const connectWallet = async () => {
   if (!window.ethereum) {
     alert("MetaMask non installé");
@@ -35,6 +58,7 @@ export const connectWallet = async () => {
   }
 
   try {
+    await switchToHardhat();
     const accounts = await window.ethereum.request({
       method: "eth_requestAccounts",
     });
@@ -43,7 +67,7 @@ export const connectWallet = async () => {
   } catch (error) {
     console.error("Erreur connexion wallet:", error);
     return null;
-  }  
+  }
 };
 
 // Vérifier connexion existante
@@ -653,6 +677,63 @@ export const detectUserRole = async (address) => {
     return "buyer";
   } catch {
     return "buyer";
+  }
+};
+
+// ─── Fonctions Admin ─────────────────────────────────────────────────────────
+
+export const blacklistAddress = async (address) => {
+  try {
+    const contract = await getContract();
+    const tx = await contract.blacklistAddress(address);
+    await tx.wait();
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: extractError(error) };
+  }
+};
+
+export const unblacklistAddress = async (address) => {
+  try {
+    const contract = await getContract();
+    const tx = await contract.unblacklistAddress(address);
+    await tx.wait();
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: extractError(error) };
+  }
+};
+
+export const removeProduct = async (productId) => {
+  try {
+    const contract = await getContract();
+    const tx = await contract.removeProduct(BigInt(productId));
+    await tx.wait();
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: extractError(error) };
+  }
+};
+
+export const featureProduct = async (productId, featured) => {
+  try {
+    const contract = await getContract();
+    const tx = await contract.featureProduct(BigInt(productId), featured);
+    await tx.wait();
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: extractError(error) };
+  }
+};
+
+export const isBlacklisted = async (address) => {
+  try {
+    if (!window.ethereum) return false;
+    const provider = new BrowserProvider(window.ethereum);
+    const contract = new Contract(CONTRACT_ADDRESS, MarketplaceABI.abi, provider);
+    return await contract.blacklisted(address);
+  } catch {
+    return false;
   }
 };
 

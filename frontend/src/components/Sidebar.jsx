@@ -8,13 +8,10 @@ function Sidebar({ activePage, setActivePage, productsCount = 0, ordersCount = 0
   ];
 
   const sellerItems = [
-    { id: "dashboard",      label: "Dashboard",          icon: "bi-grid-1x2",       hint: "Mes ventes & produits" },
-    { id: "vendre",         label: "Vendre",             icon: "bi-plus-square",    hint: "Publier un article" },
-    { id: "mon-historique", label: "Mes transactions",   icon: "bi-clock-history",  hint: "Historique complet" },
-    { id: "historique",     label: "Historique global",  icon: "bi-list-columns",   hint: "Toutes les transactions" },
-    { id: "blockchain",     label: "Données Blockchain", icon: "bi-database-check", hint: "Smart contract data" },
-    { id: "ia",             label: "IA & Analytique",    icon: "bi-graph-up-arrow", hint: "Data mining & ML" },
-    ...(isAdmin ? [{ id: "admin", label: "Administration", icon: "bi-shield-lock", hint: "Gestion des livreurs" }] : []),
+    { id: "dashboard",          label: "Dashboard",          icon: "bi-grid-1x2",       hint: "Mes ventes & produits" },
+    { id: "seller-analytics",   label: "Mes analytiques",    icon: "bi-graph-up-arrow", hint: "Performance de mes produits" },
+    { id: "vendre",             label: "Vendre",             icon: "bi-plus-square",    hint: "Publier un article" },
+    { id: "mon-historique",     label: "Mes transactions",   icon: "bi-clock-history",  hint: "Historique complet" },
   ];
 
   const delivererItems = [
@@ -22,7 +19,16 @@ function Sidebar({ activePage, setActivePage, productsCount = 0, ordersCount = 0
     { id: "mon-historique", label: "Mes transactions", icon: "bi-clock-history", hint: "Historique complet" },
   ];
 
+  const adminItems = [
+    { id: "admin-dashboard", label: "Dashboard Admin",      icon: "bi-shield-lock",        hint: "Vue d'ensemble" },
+    { id: "ia",              label: "IA & Analytique",      icon: "bi-graph-up-arrow",     hint: "Data mining & ML" },
+    { id: "anomalies",       label: "Détection d'anomalies",icon: "bi-shield-exclamation", hint: "IA sécurité" },
+    { id: "blockchain",      label: "Données Blockchain",   icon: "bi-database-check",     hint: "Smart contract data" },
+    { id: "historique",      label: "Historique global",    icon: "bi-list-columns",       hint: "Toutes les transactions" },
+  ];
+
   const items =
+    userRole === "admin"     ? adminItems     :
     userRole === "deliverer" ? delivererItems :
     userRole === "seller"    ? sellerItems    :
     buyerItems;

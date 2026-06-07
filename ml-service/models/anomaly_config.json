@@ -1,0 +1,28 @@
+{
+  "seller_features": [
+    "log_nb_ventes",
+    "log_volume_eth",
+    "taux_litige",
+    "taux_livraison",
+    "note_moyenne",
+    "panier_moyen",
+    "log_nb_produits",
+    "sentiment_moy_recu",
+    "mismatch_moy_vendeur"
+  ],
+  "buyer_features": [
+    "log_nb_achats",
+    "log_total_depense",
+    "taux_litige",
+    "note_moy_donnee",
+    "panier_moyen",
+    "ratio_vendeurs",
+    "sentiment_moy_donne",
+    "mismatch_moy_acheteur"
+  ],
+  "seller_contamination": 0.05,
+  "buyer_contamination": 0.05,
+  "trained_on": "Olist Brazilian E-Commerce",
+  "sentiment_model": "cardiffnlp/twitter-xlm-roberta-base-sentiment",
+  "buyer_model": "IsolationForest"
+}

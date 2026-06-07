@@ -76,8 +76,9 @@ router.get("/blockchain-data", async (req, res) => {
             const r = await contract.getReview(p.id, i);
             revs.push({
               productId: p.id,
-              reviewer: r.reviewer.toLowerCase(),
-              rating: Number(r.rating),
+              reviewer:  r.reviewer.toLowerCase(),
+              rating:    Number(r.rating),
+              ipfsHash:  r.ipfsHash || "",
             });
           }
           return revs;
@@ -105,7 +106,7 @@ router.get("/blockchain-data", async (req, res) => {
 const proxyML = async (path, res) => {
   try {
     const response = await fetch(`${ML_URL}${path}`, {
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(120000),
     });
     const data = await response.json();
     res.json(data);
@@ -114,7 +115,8 @@ const proxyML = async (path, res) => {
   }
 };
 
-router.get("/stats",  (req, res) => proxyML("/api/stats",  res));
-router.get("/health", (req, res) => proxyML("/health",      res));
+router.get("/stats",     (req, res) => proxyML("/api/stats",     res));
+router.get("/anomalies", (req, res) => proxyML("/api/anomalies", res));
+router.get("/health",    (req, res) => proxyML("/health",        res));
 
 module.exports = router;

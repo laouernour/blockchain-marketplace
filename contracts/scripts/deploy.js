@@ -31,17 +31,21 @@ async function main() {
   const hash = await walletClient.deployContract({
     abi: artifact.abi,
     bytecode: artifact.bytecode,
-    args: [],
+    args: [account.address],
   });
 
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
   const address = receipt.contractAddress;
   console.log("Marketplace deployed to:", address);
+  console.log("Admin address:", account.address);
 
   // Mise à jour automatique du config frontend
   const configPath = join(__dirname, "../../frontend/src/config.js");
   const { writeFileSync } = await import("fs");
-  writeFileSync(configPath, `export const CONTRACT_ADDRESS = "${address}";\n`);
+  writeFileSync(
+    configPath,
+    `export const CONTRACT_ADDRESS = "${address}";\nexport const ADMIN_ADDRESS = "${account.address}";\n`
+  );
   console.log("config.js mis à jour automatiquement");
 }
 

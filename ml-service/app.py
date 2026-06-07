@@ -195,7 +195,32 @@ def get_stats():
         return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()}), 500
 
 
+# ── /api/anomalies — détection vendeurs & acheteurs suspects ──────────────────
+
+@app.route("/api/anomalies")
+def get_anomalies():
+    try:
+        resp = requests.get(f"{NODE_URL}/ai/blockchain-data", timeout=20)
+        resp.raise_for_status()
+        chain = resp.json()
+        if not chain.get("success"):
+            return jsonify({"success": False, "error": chain.get("error", "Erreur blockchain")}), 500
+
+        products = chain["data"]["products"]
+        orders   = chain["data"]["orders"]
+        reviews  = chain["data"]["reviews"]
+
+        from anomaly import detect
+        result = detect(products, orders, reviews)
+
+        return jsonify({"success": True, "data": result})
+
+    except Exception as e:
+        import traceback
+        return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()}), 500
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5001))
     print(f"BlockBay ML Service → http://localhost:{port}")
-    app.run(debug=True, port=port)
+    app.run(debug=True, port=port, use_reloader=False)

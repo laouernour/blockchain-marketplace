@@ -78,6 +78,15 @@ export const getAIStats = async () => {
   }
 };
 
+export const getAnomalies = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/ai/anomalies`);
+    return await response.json();
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+};
+
 export const removeDeliverer = async (address) => {
   try {
     const response = await fetch(`${API_BASE_URL}/deliverers/${address}`, {

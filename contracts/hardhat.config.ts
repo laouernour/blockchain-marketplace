@@ -13,4 +13,10 @@ export default defineConfig({
       },
     },
   },
+  networks: {
+    hardhat: {
+      type: "edr-simulated",
+      chainId: 1337,
+    },
+  },
 });
