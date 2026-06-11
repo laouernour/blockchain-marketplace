@@ -316,7 +316,11 @@ export const getSellerOrders = async (sellerAddress) => {
     const orders = [];
     for (const id of orderIds) {
       const o = await contract.orders(id);
-      if (o.exists) orders.push(parseOrder(o));
+      if (o.exists) {
+        const parsed = parseOrder(o);
+        parsed.createdAt = Number(await contract.orderTimestamp(id));
+        orders.push(parsed);
+      }
     }
     return orders;
   } catch (error) {

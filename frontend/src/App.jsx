@@ -1552,19 +1552,57 @@ function App() {
                 </div>
               </div>
 
+              {/* KPIs avancés */}
+              {(() => {
+                const finalized = sellerOrders.filter(o => o.delivered || o.disputed);
+                const refunded  = sellerOrders.filter(o => o.disputeResolved && o.buyerWon);
+                const cancelled = sellerOrders.filter(o => o.refundApproved);
+                const buyerCounts = sellerOrders.reduce((acc, o) => { acc[o.buyer] = (acc[o.buyer] || 0) + 1; return acc; }, {});
+                const recurringBuyers = Object.values(buyerCounts).filter(c => c > 1).length;
+                const totalBuyers     = Object.keys(buyerCounts).length;
+                const tauxRecurrents  = totalBuyers > 0 ? (recurringBuyers / totalBuyers * 100).toFixed(1) : "0.0";
+                const tauxRemboursement = finalized.length > 0 ? (refunded.length / finalized.length * 100).toFixed(1) : "0.0";
+                const tauxAnnulation    = sellerOrders.length > 0 ? (cancelled.length / sellerOrders.length * 100).toFixed(1) : "0.0";
+                const deliveredWithTs   = sellerOrders.filter(o => o.delivered && o.createdAt > 0 && o.deliveryTimestamp > 0);
+                const avgDelayDays      = deliveredWithTs.length > 0
+                  ? (deliveredWithTs.reduce((s, o) => s + (o.deliveryTimestamp - o.createdAt), 0) / deliveredWithTs.length / 86400).toFixed(1)
+                  : null;
+                const uniqueBuyers = Object.keys(buyerCounts);
+                const clv = uniqueBuyers.length > 0
+                  ? (sellerOrders.filter(o => o.released && !(o.disputeResolved && o.buyerWon))
+                      .reduce((s, o) => s + Number(formatEther(o.amount)), 0) / uniqueBuyers.length).toFixed(4)
+                  : "0.0000";
+                return (
+                  <>
+                    <h2 style={{ margin: "28px 0 16px", fontWeight: 900 }}>Indicateurs avancés</h2>
+                    <div className="metrics-grid">
+                      <div><span>Clients récurrents</span><strong>{tauxRecurrents}%</strong></div>
+                      <div><span>Taux remboursement</span><strong>{tauxRemboursement}%</strong></div>
+                      <div><span>Taux annulation</span><strong>{tauxAnnulation}%</strong></div>
+                      <div><span>CLV moyen</span><strong>{clv} ETH</strong></div>
+                      {avgDelayDays !== null && (
+                        <div><span>Délai livraison moy.</span><strong>{avgDelayDays} j</strong></div>
+                      )}
+                      <div><span>Acheteurs uniques</span><strong>{totalBuyers}</strong></div>
+                    </div>
+                  </>
+                );
+              })()}
+
               {/* Performance par produit */}
               <h2 style={{ margin: "28px 0 16px", fontWeight: 900 }}>Performance par produit</h2>
               {products.filter(p => p.seller?.toLowerCase() === account?.toLowerCase()).length === 0 ? (
                 <div className="empty-state"><i className="bi bi-box"></i><h3>Aucun produit publié</h3></div>
               ) : (
                 <div className="table-panel">
-                  <div className="table-head" style={{ gridTemplateColumns: "0.5fr 1.5fr 0.8fr 0.8fr 0.8fr 0.8fr 0.8fr" }}>
+                  <div className="table-head" style={{ gridTemplateColumns: "0.5fr 1.5fr 0.8fr 0.8fr 0.8fr 0.8fr 0.8fr 0.8fr" }}>
                     <span>ID</span>
                     <span>Produit</span>
                     <span>Prix</span>
                     <span>Stock</span>
                     <span>Ventes</span>
                     <span>Revenus</span>
+                    <span>Rotation</span>
                     <span>Note moy.</span>
                   </div>
                   {products.filter(p => p.seller?.toLowerCase() === account?.toLowerCase()).map(p => {
@@ -1572,14 +1610,17 @@ function App() {
                     const revenue = productOrders.filter(o => o.released && !(o.disputeResolved && o.buyerWon))
                       .reduce((s, o) => s + Number(formatEther(o.amount)), 0);
                     const stockStatus = p.stock === 0 ? "refunded" : p.stock < 3 ? "pending" : "ok";
+                    const stockInitial = productOrders.length + p.stock;
+                    const rotation = stockInitial > 0 ? ((productOrders.length / stockInitial) * 100).toFixed(0) + "%" : "—";
                     return (
-                      <div className="table-row" key={p.id} style={{ gridTemplateColumns: "0.5fr 1.5fr 0.8fr 0.8fr 0.8fr 0.8fr 0.8fr" }}>
+                      <div className="table-row" key={p.id} style={{ gridTemplateColumns: "0.5fr 1.5fr 0.8fr 0.8fr 0.8fr 0.8fr 0.8fr 0.8fr" }}>
                         <span>#{p.id}</span>
                         <strong>{p.metadata?.name || `Produit #${p.id}`}</strong>
                         <span>{p.price} ETH</span>
                         <em className={stockStatus}>{p.stock === 0 ? "Rupture" : p.stock < 3 ? `${p.stock} ⚠️` : p.stock}</em>
                         <span>{productOrders.length}</span>
                         <span>{revenue.toFixed(4)} ETH</span>
+                        <span>{rotation}</span>
                         <span>{p.averageRating > 0 ? `★ ${p.averageRating}/5` : "—"}</span>
                       </div>
                     );
@@ -2590,6 +2631,63 @@ function App() {
                       <strong>{k.avg_rating > 0 ? `${k.avg_rating}/5` : "—"}</strong>
                       <span>Note moyenne</span>
                     </div>
+                  </div>
+
+                  {/* KPIs financiers & clients avancés */}
+                  <h2 style={{ margin: "28px 0 14px", fontWeight: 900 }}>Indicateurs avancés</h2>
+                  <div className="ai-kpi-grid">
+                    <div className="ai-kpi">
+                      <i className="bi bi-graph-up" style={{ color: "#33d6a6" }}></i>
+                      <strong>{k.ca_brut ?? "—"} ETH</strong>
+                      <span>CA brut</span>
+                    </div>
+                    <div className="ai-kpi">
+                      <i className="bi bi-graph-up-arrow" style={{ color: "#4f8cff" }}></i>
+                      <strong>{k.ca_net ?? "—"} ETH</strong>
+                      <span>CA net</span>
+                    </div>
+                    <div className="ai-kpi">
+                      <i className="bi bi-basket" style={{ color: "#a78bfa" }}></i>
+                      <strong>{k.aov ?? "—"} ETH</strong>
+                      <span>Panier moyen (AOV)</span>
+                    </div>
+                    <div className="ai-kpi">
+                      <i className="bi bi-person-check" style={{ color: "#fbbf24" }}></i>
+                      <strong>{k.returning_rate ?? "—"}%</strong>
+                      <span>Clients récurrents</span>
+                    </div>
+                    <div className="ai-kpi">
+                      <i className="bi bi-repeat" style={{ color: "#818cf8" }}></i>
+                      <strong>{k.avg_orders_per_buyer ?? "—"}</strong>
+                      <span>Cmds moy./client</span>
+                    </div>
+                    <div className="ai-kpi">
+                      <i className="bi bi-award" style={{ color: "#f472b6" }}></i>
+                      <strong>{k.clv_moyen ?? "—"} ETH</strong>
+                      <span>CLV moyen</span>
+                    </div>
+                    <div className="ai-kpi">
+                      <i className="bi bi-check-circle" style={{ color: "#33d6a6" }}></i>
+                      <strong>{k.released_orders ?? "—"}</strong>
+                      <span>Commandes payées</span>
+                    </div>
+                    <div className="ai-kpi">
+                      <i className="bi bi-truck" style={{ color: "#60a5fa" }}></i>
+                      <strong>{k.in_transit ?? "—"}</strong>
+                      <span>En transit</span>
+                    </div>
+                    <div className="ai-kpi">
+                      <i className="bi bi-arrow-counterclockwise" style={{ color: "#f87171" }}></i>
+                      <strong>{k.refunded_orders ?? "—"} · {k.refunded_volume_eth ?? "—"} ETH</strong>
+                      <span>Remboursements</span>
+                    </div>
+                    {k.avg_delivery_days !== null && k.avg_delivery_days !== undefined && (
+                      <div className="ai-kpi">
+                        <i className="bi bi-clock-history" style={{ color: "#fbbf24" }}></i>
+                        <strong>{k.avg_delivery_days} j</strong>
+                        <span>Délai livraison moy.</span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="ai-panels">

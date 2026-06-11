@@ -74,13 +74,39 @@ def get_stats():
         total_volume_eth  = sum(o["amount_eth"] for o in orders)
         delivered_count   = sum(1 for o in orders if o["delivered"])
         disputed_count    = sum(1 for o in orders if o["disputed"])
+        released_count    = sum(1 for o in orders if o["released"])
         buyer_won_count   = sum(1 for o in orders if o["disputeResolved"] and o["buyerWon"])
         seller_won_count  = sum(1 for o in orders if o["disputeResolved"] and not o["buyerWon"])
+        refunded_count    = buyer_won_count
+        refunded_volume   = round(sum(o["amount_eth"] for o in orders if o["disputeResolved"] and o["buyerWon"]), 4)
+        in_transit_count  = sum(1 for o in orders if not o["delivered"] and not o["released"]
+                                and o.get("deliverer", "0x0000000000000000000000000000000000000000")
+                                != "0x0000000000000000000000000000000000000000")
         unique_buyers     = len({o["buyer"]  for o in orders})
         unique_sellers    = len({p["seller"] for p in products})
         delivery_rate     = round(delivered_count / total_orders * 100, 1) if total_orders else 0
         dispute_rate      = round(disputed_count  / total_orders * 100, 1) if total_orders else 0
         avg_rating        = round(sum(r["rating"] for r in reviews) / len(reviews), 2) if reviews else 0
+
+        # ── KPIs financiers avancés ───────────────────────────────────────────
+        ca_brut = round(total_volume_eth, 4)
+        ca_net  = round(sum(o["amount_eth"] for o in orders if o["released"] and not o["buyerWon"]), 4)
+        aov     = round(total_volume_eth / total_orders, 4) if total_orders else 0
+
+        # ── KPIs clients avancés ──────────────────────────────────────────────
+        buyer_order_counts = Counter(o["buyer"] for o in orders)
+        recurring_buyers   = sum(1 for c in buyer_order_counts.values() if c > 1)
+        returning_rate     = round(recurring_buyers / unique_buyers * 100, 1) if unique_buyers else 0
+        avg_orders_per_buyer = round(total_orders / unique_buyers, 2) if unique_buyers else 0
+        clv_moyen          = round(ca_net / unique_buyers, 4) if unique_buyers else 0
+
+        # ── Vitesse de livraison moyenne ──────────────────────────────────────
+        delivery_times = [
+            (o["deliveryTimestamp"] - o["createdAt"]) / 86400
+            for o in orders
+            if o["delivered"] and o.get("createdAt", 0) > 0 and o["deliveryTimestamp"] > 0
+        ]
+        avg_delivery_days = round(sum(delivery_times) / len(delivery_times), 1) if delivery_times else None
 
         # ── Top produits les plus vendus ──────────────────────────────────────
         orders_by_product = Counter(o["productId"] for o in orders)
@@ -162,15 +188,26 @@ def get_stats():
             "success": True,
             "data": {
                 "kpis": {
-                    "total_products":   len(products),
-                    "total_orders":     total_orders,
-                    "total_volume_eth": round(total_volume_eth, 4),
-                    "delivery_rate":    delivery_rate,
-                    "dispute_rate":     dispute_rate,
-                    "unique_buyers":    unique_buyers,
-                    "unique_sellers":   unique_sellers,
-                    "avg_rating":       avg_rating,
-                    "total_reviews":    len(reviews),
+                    "total_products":      len(products),
+                    "total_orders":        total_orders,
+                    "total_volume_eth":    round(total_volume_eth, 4),
+                    "ca_brut":             ca_brut,
+                    "ca_net":              ca_net,
+                    "aov":                 aov,
+                    "delivery_rate":       delivery_rate,
+                    "dispute_rate":        dispute_rate,
+                    "unique_buyers":       unique_buyers,
+                    "unique_sellers":      unique_sellers,
+                    "avg_rating":          avg_rating,
+                    "total_reviews":       len(reviews),
+                    "released_orders":     released_count,
+                    "in_transit":          in_transit_count,
+                    "refunded_orders":     refunded_count,
+                    "refunded_volume_eth": refunded_volume,
+                    "returning_rate":      returning_rate,
+                    "avg_orders_per_buyer":avg_orders_per_buyer,
+                    "clv_moyen":           clv_moyen,
+                    "avg_delivery_days":   avg_delivery_days,
                 },
                 "top_products": top_products,
                 "categories":   categories,

@@ -43,21 +43,24 @@ router.get("/blockchain-data", async (req, res) => {
     // Lire toutes les commandes en parallèle
     const orderPromises = [];
     for (let i = 1; i <= Number(orderCount); i++) {
-      orderPromises.push(contract.orders(i).then(o => ({
-        id: Number(o.id),
-        productId: Number(o.productId),
-        buyer: o.buyer.toLowerCase(),
-        deliverer: o.deliverer.toLowerCase(),
-        amount_wei: o.amount.toString(),
-        amount_eth: Number(ethers.formatEther(o.amount)),
-        delivered: o.delivered,
-        released: o.released,
-        disputed: o.disputed,
-        disputeResolved: o.disputeResolved,
-        buyerWon: o.buyerWon,
-        deliveryTimestamp: Number(o.deliveryTimestamp),
-        exists: o.exists,
-      })).catch(() => null));
+      orderPromises.push(
+        Promise.all([contract.orders(i), contract.orderTimestamp(i)])
+          .then(([o, ts]) => ({
+            id: Number(o.id),
+            productId: Number(o.productId),
+            buyer: o.buyer.toLowerCase(),
+            deliverer: o.deliverer.toLowerCase(),
+            amount_wei: o.amount.toString(),
+            amount_eth: Number(ethers.formatEther(o.amount)),
+            delivered: o.delivered,
+            released: o.released,
+            disputed: o.disputed,
+            disputeResolved: o.disputeResolved,
+            buyerWon: o.buyerWon,
+            deliveryTimestamp: Number(o.deliveryTimestamp),
+            createdAt: Number(ts),
+            exists: o.exists,
+          })).catch(() => null));
     }
 
     const [products, orders] = await Promise.all([

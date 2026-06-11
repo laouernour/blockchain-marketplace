@@ -61,16 +61,38 @@ async function getOrderCount() {
   return Number(await pub.readContract({ address: CONTRACT, abi, functionName: "orderCount" }));
 }
 
+// ── Helper : avancer le temps Hardhat ────────────────────────────────────────
+async function advanceTime(seconds) {
+  await pub.request({ method: "evm_increaseTime", params: [seconds] });
+  await pub.request({ method: "evm_mine" });
+}
+
 // ── Helper : flux complet d'une commande ─────────────────────────────────────
 async function order(buyerKey, sellerKey, productId, priceEth, opts = {}) {
   const deliverer = accs.deliverer.address;
+
   await tx(buyerKey,    "purchase",        [BigInt(productId)], parseEther(priceEth));
   const id = await getOrderCount();
   await tx(sellerKey,   "assignDeliverer", [BigInt(id), deliverer]);
+
+  // Simuler un délai de transit réaliste (1–3 jours) entre assignation et livraison
+  const transitDays = 1 + Math.floor(Math.random() * 3);
+  await advanceTime(transitDays * 86400);
+
   await tx("deliverer", "confirmDelivery", [BigInt(id)]);
+
   if (opts.dispute) {
     await tx(buyerKey, "openDispute", [BigInt(id), "preuve_litige"]);
+    // Résoudre certains litiges : buyer gagne si favorBuyer=true
+    if (opts.resolve !== undefined) {
+      await tx("admin", "resolveDispute", [BigInt(id), opts.resolve]);
+    }
+  } else {
+    // Avancer de 49h pour passer le DISPUTE_WINDOW (48h) et libérer les fonds
+    await advanceTime(49 * 3600);
+    await tx(buyerKey, "releaseFunds", [BigInt(id)]);
   }
+
   if (opts.rating) {
     await tx(buyerKey, "submitReview", [BigInt(id), opts.rating, opts.comment ?? ""]);
   }
@@ -131,10 +153,10 @@ async function main() {
 
   // ── 4. Seller B — Vendeur frauduleux ──────────────────────────────────────
   process.stdout.write("Seller B (fraude)    ");
-  await order("buyerA", "sellerB", 4, "0.04", { dispute: true, rating: 1, comment: "Arnaque totale, produit completement non conforme a l annonce !" });
-  await order("buyerC", "sellerB", 5, "0.06", { dispute: true, rating: 1, comment: "Produit defectueux, jamais recu tel que decrit" });
-  await order("buyerD", "sellerB", 4, "0.04", { dispute: true, rating: 2, comment: "Qualite catastrophique, rien ne correspond a la description" });
-  await order("buyerB", "sellerB", 5, "0.06", { dispute: true, rating: 2, comment: "Mauvaise experience, probleme non resolu correctement" });
+  await order("buyerA", "sellerB", 4, "0.04", { dispute: true, resolve: true,  rating: 1, comment: "Arnaque totale, produit completement non conforme a l annonce !" });
+  await order("buyerC", "sellerB", 5, "0.06", { dispute: true, resolve: true,  rating: 1, comment: "Produit defectueux, jamais recu tel que decrit" });
+  await order("buyerD", "sellerB", 4, "0.04", { dispute: true, resolve: false, rating: 2, comment: "Qualite catastrophique, rien ne correspond a la description" });
+  await order("buyerB", "sellerB", 5, "0.06", { dispute: true,                 rating: 2, comment: "Mauvaise experience, probleme non resolu correctement" });
   await order("buyerA", "sellerB", 4, "0.04", { rating: 3, comment: "Mediocre, a peine utilisable" });
   await order("buyerC", "sellerB", 5, "0.06", { rating: 2, comment: "Pas terrible, qualite vraiment decevante" });
   console.log("  → taux_litige=4/6=0.67, note≈1.8 [ANOMALIE attendue]");
@@ -162,9 +184,9 @@ async function main() {
 
   // ── 6. Buyer C — Acheteur litigieux (litiges supplémentaires) ─────────────
   process.stdout.write("Buyer C (litiges+)   ");
-  await order("buyerC", "sellerA", 2, "0.02", { dispute: true, rating: 1, comment: "Commande pas conforme, j exige un remboursement" });
-  await order("buyerC", "sellerC", 8, "0.02", { dispute: true, rating: 1, comment: "Probleme avec cette commande, pas satisfait du tout" });
-  await order("buyerC", "sellerA", 3, "0.03", { dispute: true, rating: 1, comment: "Encore un probleme, comportement inacceptable du vendeur" });
+  await order("buyerC", "sellerA", 2, "0.02", { dispute: true, resolve: true,  rating: 1, comment: "Commande pas conforme, j exige un remboursement" });
+  await order("buyerC", "sellerC", 8, "0.02", { dispute: true, resolve: false, rating: 1, comment: "Probleme avec cette commande, pas satisfait du tout" });
+  await order("buyerC", "sellerA", 3, "0.03", { dispute: true,                 rating: 1, comment: "Encore un probleme, comportement inacceptable du vendeur" });
   console.log("  → total 8 commandes, 4 litiges, taux=0.5 [ANOMALIE attendue]\n");
 
   // ── Résumé ────────────────────────────────────────────────────────────────
