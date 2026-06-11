@@ -73,6 +73,62 @@ def _get_sentiment(text):
         return 0.0
 
 
+def analyze_sentiment_detail(text):
+    """Retourne label, score, normalizedScore, confidence et probabilités complètes."""
+    global _sentiment_pipe, _sentiment_loaded
+    _FALLBACK = {
+        "label": "neutral", "score": 0.0, "normalizedScore": 0.5,
+        "confidence": 0.0,
+        "probabilities": {"positive": 0.0, "neutral": 1.0, "negative": 0.0},
+    }
+    if not text or len(text.strip()) < 5:
+        return _FALLBACK
+    if not _sentiment_loaded:
+        _sentiment_loaded = True
+        try:
+            from transformers import (AutoTokenizer,
+                                      AutoModelForSequenceClassification,
+                                      pipeline)
+            print("[NLP] Chargement modèle sentiment...")
+            _model_name = "cardiffnlp/twitter-xlm-roberta-base-sentiment"
+            _tok = AutoTokenizer.from_pretrained(_model_name)
+            _mdl = AutoModelForSequenceClassification.from_pretrained(
+                _model_name, use_safetensors=False
+            )
+            _sentiment_pipe = pipeline(
+                "sentiment-analysis",
+                model=_mdl, tokenizer=_tok,
+                max_length=128, truncation=True,
+                framework="pt",
+            )
+            print("[NLP] Modèle chargé ✓")
+        except Exception as e:
+            print(f"[NLP] ERREUR chargement : {e}")
+            _sentiment_pipe = None
+    if _sentiment_pipe is None:
+        return _FALLBACK
+    try:
+        preds = _sentiment_pipe([text[:512]], top_k=None)[0]
+        probs = {p["label"].lower(): round(p["score"], 4) for p in preds}
+        best  = max(preds, key=lambda x: x["score"])
+        label = best["label"].lower()
+        conf  = round(best["score"], 4)
+        score = round(_LABEL_MAP.get(label, 0.0) * conf, 4)
+        return {
+            "label": label,
+            "score": score,
+            "normalizedScore": round((score + 1) / 2, 4),
+            "confidence": conf,
+            "probabilities": {
+                "positive": probs.get("positive", 0.0),
+                "neutral":  probs.get("neutral",  0.0),
+                "negative": probs.get("negative", 0.0),
+            },
+        }
+    except Exception:
+        return _FALLBACK
+
+
 # ── Construction features ─────────────────────────────────────────────────────
 
 def _seller_features(products, orders, reviews, fallback_note=4.2):

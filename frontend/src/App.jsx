@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { parseEther, formatEther } from "ethers";
 import Sidebar from "./components/Sidebar";
+import MonitoringRecommendation from "./components/MonitoringRecommendation";
+import ProfileRecommendation from "./components/ProfileRecommendation";
 import RoleSelectionModal from "./components/RoleSelectionModal";
 import Topbar from "./components/Topbar";
 import ProductCard from "./components/ProductCard";
@@ -42,7 +44,7 @@ import {
 } from "./utils/web3";
 import { uploadFileToIPFS, uploadJsonToIPFS } from "./utils/ipfs";
 import { ADMIN_ADDRESS } from "./config";
-import { saveProductMetadata, getProductsMetadata, getNonce, verifySignature, registerAsDeliverer, removeDeliverer, getDelivererCandidates, getAIStats, getAnomalies } from "./utils/api";
+import { saveProductMetadata, getProductsMetadata, getNonce, verifySignature, registerAsDeliverer, removeDeliverer, getDelivererCandidates, getAIStats, getAnomalies, analyzeReviewStore, getRecommendations } from "./utils/api";
 
 const EVENT_META = {
   OrderCreated:       { label: "Achat",              icon: "bi-cart-check",            color: "#4f8cff" },
@@ -132,6 +134,10 @@ function App() {
   const [productCategory, setProductCategory] = useState("NFT & Art digital");
   const [customCategory, setCustomCategory] = useState("");
   const [query, setQuery] = useState("");
+  const [searchMode, setSearchMode]   = useState("catalog");
+  const [recoResults, setRecoResults] = useState([]);
+  const [recoLoading, setRecoLoading] = useState(false);
+  const [recoError, setRecoError]     = useState(null);
   const [filterCategory, setFilterCategory] = useState("Toutes");
   const [filterPriceMin, setFilterPriceMin] = useState("");
   const [filterPriceMax, setFilterPriceMax] = useState("");
@@ -582,7 +588,7 @@ function App() {
   // Garde : rediriger vers la bonne page selon le rôle
   useEffect(() => {
     if (!account) return;
-    if (userRole === "admin" && activePage !== "admin-dashboard" && activePage !== "ia" && activePage !== "blockchain" && activePage !== "historique" && activePage !== "anomalies") setActivePage("admin-dashboard");
+    if (userRole === "admin" && activePage !== "admin-dashboard" && activePage !== "ia" && activePage !== "blockchain" && activePage !== "historique" && activePage !== "anomalies" && activePage !== "monitoring") setActivePage("admin-dashboard");
     if (userRole === "deliverer" && activePage !== "livraisons" && activePage !== "mon-historique") setActivePage("livraisons");
     if (userRole === "seller" && (activePage === "marketplace" || activePage === "transactions" || activePage === "ia" || activePage === "historique" || activePage === "blockchain")) setActivePage("dashboard");
     if (userRole === "buyer" && (activePage === "dashboard" || activePage === "vendre" || activePage === "livraisons")) setActivePage("marketplace");
@@ -608,6 +614,31 @@ function App() {
       return true;
     });
   }, [products, query, filterCategory, filterPriceMin, filterPriceMax]);
+
+  useEffect(() => {
+    if (searchMode !== "recommendation" || activePage !== "marketplace") return;
+    const q = query.trim();
+    if (!q) { setRecoResults([]); setRecoError(null); return; }
+    const timer = setTimeout(async () => {
+      setRecoLoading(true);
+      setRecoError(null);
+      try {
+        const res = await getRecommendations(q, 10);
+        if (res.success) {
+          setRecoResults(res.data || []);
+        } else {
+          setRecoError(res.error || "Erreur de recommandation");
+          setRecoResults([]);
+        }
+      } catch {
+        setRecoError("Service de recommandation indisponible");
+        setRecoResults([]);
+      } finally {
+        setRecoLoading(false);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [query, searchMode, activePage]);
 
   const totalValueEth = useMemo(() => {
     return products.reduce((sum, product) => sum + Number(product.price || 0), 0);
@@ -1007,6 +1038,13 @@ function App() {
       setReviewComment("");
       await loadReviews(order.productId);
       await loadProducts();
+      // Analyse NLP en arrière-plan — non bloquant, n'affecte pas l'avis on-chain
+      analyzeReviewStore({
+        contractProductId: order.productId,
+        reviewerAddress: account,
+        orderId: Number(selectedOrderId),
+        rawText: reviewComment || "Avis sans commentaire",
+      }).catch(err => console.warn("[NLP] Analyse sentiment échouée :", err.message));
     } else {
       toast.error(result.error);
     }
@@ -1070,71 +1108,178 @@ function App() {
 
           {activePage === "marketplace" && userRole === "buyer" && (
             <section className="page-card marketplace-page">
-              <div className="filters-bar">
-                <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
-                  <option value="Toutes">Toutes les catégories</option>
-                  {categories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
-                </select>
-                <div className="price-range">
-                  <input
-                    type="number"
-                    placeholder="Prix min (ETH)"
-                    value={filterPriceMin}
-                    onChange={(e) => setFilterPriceMin(e.target.value)}
-                    min="0"
-                    step="0.001"
-                  />
-                  <span>—</span>
-                  <input
-                    type="number"
-                    placeholder="Prix max (ETH)"
-                    value={filterPriceMax}
-                    onChange={(e) => setFilterPriceMax(e.target.value)}
-                    min="0"
-                    step="0.001"
-                  />
-                </div>
-                {(filterCategory !== "Toutes" || filterPriceMin || filterPriceMax) && (
-                  <button className="ghost-btn" onClick={() => { setFilterCategory("Toutes"); setFilterPriceMin(""); setFilterPriceMax(""); }}>
-                    <i className="bi bi-x-circle"></i>
-                    Réinitialiser
-                  </button>
-                )}
+
+              <ProfileRecommendation
+                account={account}
+                products={products}
+                isDelivererAccount={isDelivererAccount}
+                onPurchaseSuccess={refreshAll}
+              />
+
+              <div className="search-mode-toggle">
+                <button
+                  className={`mode-btn${searchMode === "catalog" ? " active" : ""}`}
+                  onClick={() => { setSearchMode("catalog"); setRecoResults([]); setRecoError(null); }}
+                >
+                  <i className="bi bi-search"></i> Catalogue
+                </button>
+                <button
+                  className={`mode-btn${searchMode === "recommendation" ? " active" : ""}`}
+                  onClick={() => setSearchMode("recommendation")}
+                >
+                  <i className="bi bi-stars"></i> Recommandation système
+                </button>
               </div>
 
-              {loadingProducts ? (
-                <div className="empty-state">
-                  <div className="loader"></div>
-                  <h3>Chargement des produits...</h3>
-                </div>
-              ) : filteredProducts.length === 0 ? (
-                <div className="empty-state">
-                  <i className="bi bi-bag-x"></i>
-                  <h3>Aucun produit trouvé</h3>
-                  <p>Essaie d’autres filtres ou publie un article depuis l’onglet Vendre.</p>
-                </div>
-              ) : (
-                <div className="products-grid">
-                  {filteredProducts.map((product) => (
-                    <ProductCard
-                      key={product.id}
-                      id={product.id}
-                      name={product.metadata?.name || `Produit on-chain #${product.id}`}
-                      description={product.metadata?.description || ""}
-                      category={product.metadata?.category || ""}
-                      image={product.metadata?.image || ""}
-                      ipfsHash={product.ipfsHash}
-                      price={`${product.price} ETH`}
-                      stock={product.stock}
-                      seller={product.seller}
-                      averageRating={product.averageRating}
-                      account={account}
-                      isDelivererAccount={isDelivererAccount}
-                      onPurchaseSuccess={refreshAll}
-                    />
-                  ))}
-                </div>
+              {searchMode === "catalog" && (
+                <>
+                  <div className="filters-bar">
+                    <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
+                      <option value="Toutes">Toutes les catégories</option>
+                      {categories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+                    </select>
+                    <div className="price-range">
+                      <input
+                        type="number"
+                        placeholder="Prix min (ETH)"
+                        value={filterPriceMin}
+                        onChange={(e) => setFilterPriceMin(e.target.value)}
+                        min="0"
+                        step="0.001"
+                      />
+                      <span>—</span>
+                      <input
+                        type="number"
+                        placeholder="Prix max (ETH)"
+                        value={filterPriceMax}
+                        onChange={(e) => setFilterPriceMax(e.target.value)}
+                        min="0"
+                        step="0.001"
+                      />
+                    </div>
+                    {(filterCategory !== "Toutes" || filterPriceMin || filterPriceMax) && (
+                      <button className="ghost-btn" onClick={() => { setFilterCategory("Toutes"); setFilterPriceMin(""); setFilterPriceMax(""); }}>
+                        <i className="bi bi-x-circle"></i>
+                        Réinitialiser
+                      </button>
+                    )}
+                  </div>
+
+                  {loadingProducts ? (
+                    <div className="empty-state">
+                      <div className="loader"></div>
+                      <h3>Chargement des produits...</h3>
+                    </div>
+                  ) : filteredProducts.length === 0 ? (
+                    <div className="empty-state">
+                      <i className="bi bi-bag-x"></i>
+                      <h3>Aucun produit trouvé</h3>
+                      <p>Essaie d’autres filtres ou publie un article depuis l’onglet Vendre.</p>
+                    </div>
+                  ) : (
+                    <div className="products-grid">
+                      {filteredProducts.map((product) => (
+                        <ProductCard
+                          key={product.id}
+                          id={product.id}
+                          name={product.metadata?.name || `Produit on-chain #${product.id}`}
+                          description={product.metadata?.description || ""}
+                          category={product.metadata?.category || ""}
+                          image={product.metadata?.image || ""}
+                          ipfsHash={product.ipfsHash}
+                          price={`${product.price} ETH`}
+                          stock={product.stock}
+                          seller={product.seller}
+                          averageRating={product.averageRating}
+                          account={account}
+                          isDelivererAccount={isDelivererAccount}
+                          onPurchaseSuccess={refreshAll}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
+
+              {searchMode === "recommendation" && (
+                <>
+                  {recoLoading ? (
+                    <div className="empty-state">
+                      <div className="loader"></div>
+                      <h3>Recherche des meilleures recommandations...</h3>
+                    </div>
+                  ) : recoError ? (
+                    <div className="products-grid">
+                      <div className="reco-error">
+                        <i className="bi bi-exclamation-triangle"></i>
+                        {" "}{recoError}
+                        <button className="ghost-btn" style={{ marginTop: "8px", display: "block" }}
+                          onClick={() => { setSearchMode("catalog"); setRecoError(null); }}>
+                          Revenir au catalogue
+                        </button>
+                      </div>
+                    </div>
+                  ) : !query.trim() ? (
+                    <div className="empty-state">
+                      <i className="bi bi-stars"></i>
+                      <h3>Tape une recherche</h3>
+                      <p>Ex : "PC gamer", "cable USB", "chargeur rapide"</p>
+                    </div>
+                  ) : recoResults.length === 0 ? (
+                    <div className="empty-state">
+                      <i className="bi bi-search-heart"></i>
+                      <h3>Aucun produit pertinent trouvé</h3>
+                      <p>Aucun article du catalogue ne correspond à "{query}".</p>
+                    </div>
+                  ) : (
+                    <div className="products-grid">
+                      {recoResults.map((reco) => {
+                        const chainProduct = products.find(p => p.id === reco.productId) || {};
+                        return (
+                          <div key={reco.productId} className="reco-card-wrapper">
+                            <div className="reco-trust-badge">
+                              <span className="reco-trust-score">
+                                <i className="bi bi-shield-check"></i>
+                                Confiance {Math.round(reco.trustScore * 100)}%
+                              </span>
+                              <span className="reco-stat">
+                                <i className="bi bi-bag-check"></i>
+                                {reco.signals.purchases} achat{reco.signals.purchases !== 1 ? "s" : ""}
+                              </span>
+                              <span className="reco-stat">
+                                <i className="bi bi-chat-text"></i>
+                                {reco.signals.reviewsCount} avis vérifiés
+                              </span>
+                              {reco.signals.avgRating && (
+                                <span className="reco-stat">
+                                  <i className="bi bi-star-fill"></i>
+                                  {reco.signals.avgRating}/5
+                                </span>
+                              )}
+                            </div>
+                            <ProductCard
+                              id={reco.productId}
+                              name={reco.name}
+                              description={reco.description}
+                              category={reco.category}
+                              image={chainProduct.metadata?.image || ""}
+                              ipfsHash={chainProduct.ipfsHash || ""}
+                              price={`${reco.priceEth} ETH`}
+                              stock={reco.stock}
+                              seller={chainProduct.seller || ""}
+                              averageRating={reco.signals.avgRating || 0}
+                              account={account}
+                              isDelivererAccount={isDelivererAccount}
+                              onPurchaseSuccess={refreshAll}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
+
             </section>
           )}
 
@@ -3066,6 +3211,10 @@ function App() {
                 );
               })()}
             </section>
+          )}
+
+          {activePage === "monitoring" && userRole === "admin" && (
+            <MonitoringRecommendation />
           )}
 
         </main>

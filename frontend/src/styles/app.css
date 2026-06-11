@@ -2077,3 +2077,622 @@ em.delivered {
   font-size: 0.72rem;
   color: var(--muted);
 }
+
+/* ── Mode toggle recherche ───────────────────────────────────────────────── */
+
+.search-mode-toggle {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.mode-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 18px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+
+.mode-btn:hover {
+  color: var(--text);
+  border-color: rgba(51, 214, 166, 0.5);
+}
+
+.mode-btn.active {
+  background: rgba(51, 214, 166, 0.12);
+  color: var(--accent);
+  border-color: var(--accent);
+  font-weight: 500;
+}
+
+/* ── Badge confiance système (mode recommandation) ──────────────────────── */
+
+.reco-card-wrapper {
+  display: flex;
+  flex-direction: column;
+}
+
+.reco-trust-badge {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 7px 14px;
+  background: rgba(51, 214, 166, 0.07);
+  border: 1px solid rgba(51, 214, 166, 0.22);
+  border-bottom: none;
+  border-radius: 16px 16px 0 0;
+  font-size: 0.78rem;
+  flex-wrap: wrap;
+}
+
+.reco-trust-score {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.reco-stat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+}
+
+.reco-card-wrapper .product-card {
+  border-radius: 0 0 16px 16px;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+/* ── États vides / erreur (mode recommandation) ─────────────────────────── */
+
+.reco-error {
+  grid-column: 1 / -1;
+  padding: 20px 24px;
+  background: rgba(251, 113, 133, 0.08);
+  border: 1px solid rgba(251, 113, 133, 0.28);
+  border-radius: 14px;
+  color: var(--danger);
+  text-align: center;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+/* ── Monitoring Recommandation IA ────────────────────────────────────────── */
+
+.mon-page { padding-bottom: 60px; }
+
+.mon-page-header { margin-bottom: 20px; }
+.mon-page-header h1 { font-size: 1.6rem; font-weight: 900; display: flex; align-items: center; gap: 10px; }
+.mon-page-header p  { color: var(--muted); margin-top: 4px; font-size: 0.9rem; }
+
+/* Formule */
+.mon-formula-band {
+  background: rgba(79, 140, 255, 0.07);
+  border: 1px solid rgba(79, 140, 255, 0.22);
+  border-radius: 12px;
+  padding: 14px 20px;
+  margin-bottom: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mon-formula-code {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  background: transparent;
+}
+.mon-f-accent { color: #4f8cff; }
+.mon-f-trust  { color: #33d6a6; }
+.mon-formula-detail { font-size: 0.78rem; color: var(--muted); }
+
+/* Recherche */
+.mon-search-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.mon-search-input {
+  flex: 1;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--input-bg, rgba(255,255,255,0.05));
+  color: var(--text);
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+.mon-search-input:focus { outline: none; border-color: rgba(79,140,255,0.5); }
+
+/* Scénarios rapides */
+.mon-quick-scenarios {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 22px;
+}
+.mon-scenario-label { font-size: 0.8rem; color: var(--muted); }
+.mon-scenario-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  line-height: 1.2;
+  transition: border-color 0.18s, background 0.18s;
+}
+.mon-scenario-btn small { font-size: 0.68rem; color: var(--muted); font-weight: 400; }
+.mon-scenario-btn:hover  { border-color: rgba(51,214,166,0.5); background: rgba(51,214,166,0.05); }
+.mon-scenario-btn.active { border-color: #33d6a6; background: rgba(51,214,166,0.12); color: #33d6a6; }
+
+/* Résumé KPI */
+.mon-summary-strip {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.mon-kpi-card {
+  flex: 1;
+  min-width: 100px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mon-kpi-card span { font-size: 1.35rem; font-weight: 900; }
+.mon-kpi-card small { font-size: 0.72rem; color: var(--muted); }
+.mon-kpi-green span { color: #22c55e; }
+.mon-kpi-red   span { color: #fb7185; }
+.mon-kpi-blue  span { color: #4f8cff; }
+
+/* Poids trustScore */
+.mon-weights-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 22px;
+  font-size: 0.8rem;
+}
+.mon-weight-label { color: var(--muted); }
+.mon-weight-chip {
+  padding: 3px 10px;
+  border-radius: 14px;
+  border: 1px solid;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+/* Sections produits */
+.mon-section { margin-top: 28px; }
+.mon-section-head {
+  font-size: 0.9rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.mon-count-badge {
+  background: rgba(34,197,94,0.15);
+  color: #22c55e;
+  border-radius: 20px;
+  padding: 1px 10px;
+  font-size: 0.78rem;
+}
+.mon-count-red {
+  background: rgba(251,113,133,0.15);
+  color: #fb7185;
+}
+
+/* Carte produit */
+.mon-product-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px 22px;
+  margin-bottom: 16px;
+}
+
+.mon-product-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.mon-rank {
+  font-size: 1.5rem;
+  font-weight: 900;
+  color: var(--muted);
+  min-width: 36px;
+}
+.mon-product-meta { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.mon-product-meta strong { font-size: 1.05rem; }
+.mon-cat-badge {
+  font-size: 0.72rem;
+  color: var(--muted);
+  background: rgba(255,255,255,0.05);
+  border-radius: 6px;
+  padding: 1px 8px;
+  width: fit-content;
+}
+.mon-chips-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.mon-chip {
+  padding: 3px 12px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.mon-chip-final {
+  color: #33d6a6;
+  background: rgba(51,214,166,0.12);
+}
+
+/* Barres */
+.mon-bars-grid { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+.mon-bar-label { font-size: 0.78rem; color: var(--muted); margin-bottom: 3px; }
+.mon-bar-label strong { color: var(--text); }
+.mon-bar-track {
+  width: 100%;
+  height: 6px;
+  background: rgba(255,255,255,0.07);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.mon-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+/* Deux colonnes détail */
+.mon-detail-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+@media (max-width: 800px) { .mon-detail-cols { grid-template-columns: 1fr; } }
+
+.mon-detail-col { background: rgba(255,255,255,0.03); border-radius: 10px; padding: 14px 16px; }
+.mon-col-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mon-data-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.mon-data-table td { padding: 4px 0; vertical-align: middle; }
+.mon-data-table td:first-child { color: var(--muted); width: 60%; }
+.mon-data-table td:last-child  { text-align: right; }
+.mon-row-hl td { background: rgba(255,255,255,0.03); border-radius: 4px; }
+.mon-row-sep td { height: 6px; }
+.mon-weight { font-size: 0.68rem; color: var(--muted); margin-left: 4px; }
+.mon-coverage-hint { font-size: 0.7rem; color: var(--muted); }
+.mon-muted-text { color: var(--muted); font-size: 0.78rem; }
+
+/* Couverture NLP */
+.mon-coverage-block {
+  background: rgba(51,214,166,0.05);
+  border: 1px solid rgba(51,214,166,0.18);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 0.82rem;
+}
+.mon-coverage-text { color: var(--text); }
+.mon-coverage-formula { font-size: 0.78rem; color: var(--muted); font-family: monospace; }
+.mon-formula-val { color: #33d6a6; font-weight: 700; }
+.mon-coverage-bar-track {
+  width: 100%;
+  height: 4px;
+  background: rgba(255,255,255,0.07);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+.mon-coverage-bar-fill {
+  height: 100%;
+  background: #33d6a6;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+/* Explication */
+.mon-explanation-row {
+  font-size: 0.82rem;
+  color: var(--muted);
+  padding: 8px 12px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+/* Bouton NLP */
+.mon-nlp-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(79,140,255,0.08);
+  border: 1px solid rgba(79,140,255,0.25);
+  border-radius: 8px;
+  padding: 7px 16px;
+  color: #4f8cff;
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.18s;
+}
+.mon-nlp-toggle:hover { background: rgba(79,140,255,0.15); }
+
+/* Tableau NLP */
+.mon-nlp-section { margin-top: 14px; overflow-x: auto; }
+.mon-nlp-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.mon-nlp-table th {
+  padding: 6px 10px;
+  text-align: left;
+  color: var(--muted);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.mon-nlp-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  vertical-align: top;
+}
+.mon-review-text {
+  max-width: 260px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+
+/* Hint pédagogique sous la barre de recherche */
+.mon-search-hint {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin: -6px 0 18px;
+  padding-left: 2px;
+}
+
+/* Note de divergence reviewsCount vs commentCount */
+.mon-discrepancy-dot { cursor: help; color: #94a3b8; font-size: 0.75rem; margin-left: 4px; }
+.mon-discrepancy-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: rgba(148,163,184,0.07);
+  border: 1px solid rgba(148,163,184,0.2);
+  border-radius: 8px;
+  font-size: 0.76rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.mon-discrepancy-note i { flex-shrink: 0; margin-top: 1px; }
+
+/* Section produits non retenus (repliable) */
+.mon-rejected-section {
+  margin-top: 28px;
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.mon-rejected-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  background: rgba(255,255,255,0.02);
+  border: none;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.mon-rejected-toggle:hover { background: rgba(255,255,255,0.05); }
+.mon-rejected-toggle-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mon-count-muted {
+  background: rgba(148,163,184,0.12);
+  color: #94a3b8;
+}
+.mon-rejected-subtitle {
+  font-size: 0.78rem;
+  color: var(--muted);
+  padding: 8px 18px 4px;
+  font-style: italic;
+}
+
+/* Grille produits non retenus */
+.mon-rejected-grid { display: flex; flex-direction: column; gap: 5px; padding: 8px 14px 14px; }
+.mon-rejected-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 12px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 7px;
+  font-size: 0.82rem;
+  flex-wrap: wrap;
+}
+.mon-rejected-id     { color: var(--muted); min-width: 34px; font-size: 0.74rem; }
+.mon-rejected-name   { font-weight: 600; flex: 1; color: var(--text); }
+.mon-rejected-reason { color: #94a3b8; font-size: 0.76rem; font-style: italic; }
+
+/* ── Section "Recommandé pour vous" (profil acheteur) ───────────────────────── */
+
+.prof-section {
+  margin-bottom: 28px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+/* En-tête repliable */
+.prof-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  background: rgba(167,139,250,0.05);
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  gap: 14px;
+  transition: background 0.15s;
+}
+.prof-header:hover { background: rgba(167,139,250,0.09); }
+
+.prof-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+.prof-header-left > .bi { font-size: 1.1rem; color: #a78bfa; flex-shrink: 0; }
+
+.prof-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.prof-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.prof-subtitle {
+  font-size: 0.76rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prof-chevron { color: var(--muted); font-size: 0.9rem; flex-shrink: 0; }
+
+/* Corps */
+.prof-body { padding: 16px 20px 20px; }
+
+/* Carte produit avec wrapper profil */
+.prof-card-wrapper {
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  transition: border-color 0.2s;
+}
+.prof-card-wrapper:hover { border-color: rgba(167,139,250,0.35); }
+.prof-card-wrapper.prof-already { opacity: 0.70; }
+
+/* Badge "Déjà acheté" */
+.prof-already-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 14px;
+  background: rgba(51,214,166,0.1);
+  color: #33d6a6;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-bottom: 1px solid rgba(51,214,166,0.18);
+}
+
+/* Strip de labels lisibles (pas de score brut) */
+.prof-score-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  background: rgba(255,255,255,0.02);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+/* Label "Correspond à votre profil XX%" ou "Confiance système élevée" */
+.prof-match-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(167,139,250,0.10);
+  color: #a78bfa;
+  border-radius: 12px;
+  padding: 3px 11px;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+/* Label "Confiance XX%" */
+.prof-trust-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 12px;
+  border: 1px solid;
+  padding: 3px 11px;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+/* Supprime le border-radius du ProductCard imbriqué */
+.prof-card-wrapper .product-card {
+  border-radius: 0 !important;
+  border: none !important;
+}

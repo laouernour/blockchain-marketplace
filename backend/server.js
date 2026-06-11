@@ -122,6 +122,31 @@ app.listen(PORT, async () => {
     `);
     console.log("Table deliverer_candidates OK");
 
+    await pool.query(
+      `ALTER TABLE products ADD COLUMN IF NOT EXISTS semantic_profile TEXT`
+    );
+    console.log("Colonne semantic_profile OK");
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS review_sentiment (
+        id                  SERIAL PRIMARY KEY,
+        contract_product_id INTEGER NOT NULL,
+        reviewer_address    TEXT    NOT NULL,
+        order_id            INTEGER NOT NULL,
+        raw_text            TEXT,
+        label               TEXT,
+        score               DOUBLE PRECISION,
+        normalized_score    DOUBLE PRECISION,
+        confidence          DOUBLE PRECISION,
+        prob_positive       DOUBLE PRECISION,
+        prob_neutral        DOUBLE PRECISION,
+        prob_negative       DOUBLE PRECISION,
+        analyzed_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (contract_product_id, reviewer_address, order_id)
+      )
+    `);
+    console.log("Table review_sentiment OK");
+
     // Seed des livreurs de développement : vide la table puis insère uniquement les adresses configurées
     if (DEV_DELIVERERS.length > 0) {
       await pool.query("DELETE FROM deliverer_candidates");

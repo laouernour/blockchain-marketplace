@@ -110,6 +110,48 @@ export const getDelivererCandidates = async () => {
 };
 
 
+export const getProductSentiments = async (productId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/ai/product-sentiments/${productId}`);
+    return await response.json();
+  } catch (error) {
+    return { success: false, data: [] };
+  }
+};
+
+export const getRecommendations = async (query, limit = 10) => {
+  try {
+    const params = new URLSearchParams({ query, limit });
+    const response = await fetch(`${API_BASE_URL}/ai/recommend-search?${params}`);
+    return await response.json();
+  } catch (error) {
+    return { success: false, error: error.message, data: [] };
+  }
+};
+
+export const getProfileRecommendations = async (buyerAddress, limit = 8) => {
+  try {
+    const params = new URLSearchParams({ buyer: buyerAddress, limit });
+    const response = await fetch(`${API_BASE_URL}/ai/recommend-profile?${params}`);
+    return await response.json();
+  } catch (error) {
+    return { success: false, error: error.message, data: [] };
+  }
+};
+
+export const analyzeReviewStore = async ({ contractProductId, reviewerAddress, orderId, rawText }) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/ai/analyze-review-store`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contractProductId, reviewerAddress, orderId, rawText }),
+    });
+    return await response.json();
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+};
+
 export const saveProductMetadata = async (productData) => {
   try {
     const response = await fetch(`${API_BASE_URL}/products`, {

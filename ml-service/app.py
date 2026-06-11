@@ -1,5 +1,5 @@
 import os, requests
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 import psycopg2, psycopg2.extras
 from dotenv import load_dotenv
@@ -252,6 +252,50 @@ def get_anomalies():
 
         return jsonify({"success": True, "data": result})
 
+    except Exception as e:
+        import traceback
+        return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()}), 500
+
+
+# ── /api/analyze-review — analyse NLP d'un commentaire ───────────────────────
+
+@app.route("/api/analyze-review", methods=["POST"])
+def analyze_review():
+    try:
+        body = request.get_json(silent=True) or {}
+        text = body.get("text", "")
+        if not isinstance(text, str):
+            return jsonify({"success": False, "error": "Champ 'text' manquant ou invalide"}), 400
+        from anomaly import analyze_sentiment_detail
+        result = analyze_sentiment_detail(text)
+        return jsonify({"success": True, "data": result})
+    except Exception as e:
+        import traceback
+        return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()}), 500
+
+
+# ── /api/analyze-reviews-batch — analyse NLP en lot ──────────────────────────
+
+@app.route("/api/analyze-reviews-batch", methods=["POST"])
+def analyze_reviews_batch():
+    try:
+        body    = request.get_json(silent=True) or {}
+        reviews = body.get("reviews", [])
+        if not isinstance(reviews, list):
+            return jsonify({"success": False, "error": "Champ 'reviews' doit être une liste"}), 400
+        from anomaly import analyze_sentiment_detail
+        results = []
+        for rev in reviews:
+            text = rev.get("text", "")
+            sentiment = analyze_sentiment_detail(text)
+            results.append({
+                "id":                rev.get("id"),
+                "contractProductId": rev.get("contractProductId"),
+                "orderId":           rev.get("orderId"),
+                "reviewerAddress":   rev.get("reviewerAddress"),
+                "sentiment":         sentiment,
+            })
+        return jsonify({"success": True, "data": results, "count": len(results)})
     except Exception as e:
         import traceback
         return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()}), 500

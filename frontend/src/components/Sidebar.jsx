@@ -25,6 +25,7 @@ function Sidebar({ activePage, setActivePage, productsCount = 0, ordersCount = 0
     { id: "anomalies",       label: "Détection d'anomalies",icon: "bi-shield-exclamation", hint: "IA sécurité" },
     { id: "blockchain",      label: "Données Blockchain",   icon: "bi-database-check",     hint: "Smart contract data" },
     { id: "historique",      label: "Historique global",    icon: "bi-list-columns",       hint: "Toutes les transactions" },
+    { id: "monitoring",      label: "Monitoring Reco IA",   icon: "bi-speedometer2",       hint: "Démo scores & NLP" },
   ];
 
   const items =
