@@ -22,7 +22,7 @@ const pool  = require("../config/db");
 const RPC_URL          = process.env.WEB3_RPC_URL    || "http://127.0.0.1:8545";
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS || "0x5fbdb2315678afecb367f032d93f642f64180aa3";
 const ML_URL           = process.env.ML_SERVICE_URL   || "http://localhost:5001";
-const CONCURRENCY      = 3; // avis analysés en parallèle
+const CONCURRENCY      = 1; // avis analysés séquentiellement (évite MemoryError au chargement NLP)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

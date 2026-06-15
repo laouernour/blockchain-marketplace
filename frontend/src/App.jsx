@@ -174,6 +174,9 @@ function App() {
   const [loadingAI, setLoadingAI] = useState(false);
   const [anomalyData, setAnomalyData] = useState(null);
   const [loadingAnomalies, setLoadingAnomalies] = useState(false);
+  const [anomalyFilter, setAnomalyFilter] = useState("all");
+  const [anomalyAnalyzedAt, setAnomalyAnalyzedAt] = useState(null);
+  const [loadingSellerAnalytics, setLoadingSellerAnalytics] = useState(false);
   const [showRoleModal, setShowRoleModal] = useState(false);
   const [newDelivererAddress, setNewDelivererAddress] = useState("");
 
@@ -330,8 +333,10 @@ function App() {
   const loadAnomalies = async () => {
     setLoadingAnomalies(true);
     const result = await getAnomalies();
-    if (result.success) setAnomalyData(result.data);
-    else setAnomalyData(null);
+    if (result.success) {
+      setAnomalyData(result.data);
+      setAnomalyAnalyzedAt(new Date().toLocaleString("fr-FR"));
+    } else setAnomalyData(null);
     setLoadingAnomalies(false);
   };
 
@@ -1658,8 +1663,13 @@ function App() {
                   <span className="eyebrow">Mes analytiques</span>
                   <h1>Performance de mes produits</h1>
                 </div>
-                <button className="primary-btn" onClick={() => loadSellerOrders(account)}>
-                  <i className="bi bi-arrow-clockwise"></i> Actualiser
+                <button className="primary-btn" disabled={loadingSellerAnalytics} onClick={async () => {
+                  setLoadingSellerAnalytics(true);
+                  await loadSellerOrders(account);
+                  setLoadingSellerAnalytics(false);
+                }}>
+                  <i className={`bi bi-arrow-clockwise${loadingSellerAnalytics ? " spin" : ""}`}></i>
+                  {loadingSellerAnalytics ? "Chargement..." : "Actualiser"}
                 </button>
               </div>
 
@@ -1708,6 +1718,11 @@ function App() {
                 const tauxRecurrents  = totalBuyers > 0 ? (recurringBuyers / totalBuyers * 100).toFixed(1) : "0.0";
                 const tauxRemboursement = finalized.length > 0 ? (refunded.length / finalized.length * 100).toFixed(1) : "0.0";
                 const tauxAnnulation    = sellerOrders.length > 0 ? (cancelled.length / sellerOrders.length * 100).toFixed(1) : "0.0";
+                const delivered         = sellerOrders.filter(o => o.delivered);
+                const tauxLivraison     = sellerOrders.length > 0 ? (delivered.length / sellerOrders.length * 100).toFixed(1) : "0.0";
+                const totalLitiges      = sellerOrders.filter(o => o.disputed || o.disputeResolved).length;
+                const litigesResolus    = sellerOrders.filter(o => o.disputeResolved).length;
+                const tauxLitigeResolu  = totalLitiges > 0 ? (litigesResolus / totalLitiges * 100).toFixed(1) : "0.0";
                 const deliveredWithTs   = sellerOrders.filter(o => o.delivered && o.createdAt > 0 && o.deliveryTimestamp > 0);
                 const avgDelayDays      = deliveredWithTs.length > 0
                   ? (deliveredWithTs.reduce((s, o) => s + (o.deliveryTimestamp - o.createdAt), 0) / deliveredWithTs.length / 86400).toFixed(1)
@@ -1725,6 +1740,8 @@ function App() {
                       <div><span>Taux remboursement</span><strong>{tauxRemboursement}%</strong></div>
                       <div><span>Taux annulation</span><strong>{tauxAnnulation}%</strong></div>
                       <div><span>CLV moyen</span><strong>{clv} ETH</strong></div>
+                      <div><span>Taux de livraison</span><strong>{tauxLivraison}%</strong></div>
+                      <div><span>Litiges résolus</span><strong>{tauxLitigeResolu}%</strong></div>
                       {avgDelayDays !== null && (
                         <div><span>Délai livraison moy.</span><strong>{avgDelayDays} j</strong></div>
                       )}
@@ -3083,135 +3100,286 @@ function App() {
             </section>
           )}
 
-          {activePage === "anomalies" && userRole === "admin" && (
-            <section className="page-card">
-              <div className="page-head">
-                <div>
-                  <span className="eyebrow">Isolation Forest · ML</span>
-                  <h1>Détection d'anomalies</h1>
-                  <p>Détection automatique de comportements suspects chez les vendeurs et acheteurs via modèles Isolation Forest.</p>
+          {activePage === "anomalies" && userRole === "admin" && (() => {
+            const NLP_FEATURES = ["sentiment_moy_recu","sentiment_moy_donne","mismatch_moy_vendeur","mismatch_moy_acheteur"];
+            const s = anomalyData?.summary || {};
+            const allAnomalies = anomalyData?.anomalies || [];
+            const filteredAnomalies = allAnomalies.filter(a => {
+              if (anomalyFilter === "sellers") return a.entity === "seller";
+              if (anomalyFilter === "buyers")  return a.entity === "buyer";
+              if (anomalyFilter === "high")    return a.severity === "high";
+              return true;
+            });
+            const scoreToPercent = (score) => Math.round((Math.abs(Math.min(0, Math.max(-0.5, score))) / 0.5) * 100);
+            const riskScore = (score) => Math.round(scoreToPercent(score) * 0.99);
+
+            const severityCfg = {
+              high:   { label: "CRITIQUE", bg: "#ef444418", color: "#ef4444", border: "#ef444460" },
+              medium: { label: "ÉLEVÉ",    bg: "#fbbf2418", color: "#fbbf24", border: "#fbbf2460" },
+            };
+            const entityCfg = {
+              seller: { label: "Vendeur",  icon: "bi-shop",   color: "#818cf8", bg: "#818cf818" },
+              buyer:  { label: "Acheteur", icon: "bi-person", color: "#4f8cff", bg: "#4f8cff18" },
+            };
+
+            return (
+            <section className="page-card" style={{ padding: 0, overflow: "hidden" }}>
+
+              {/* ── Barre de titre ── */}
+              <div style={{ padding: "28px 32px 20px", borderBottom: "1px solid var(--border, #334155)" }}>
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "16px", flexWrap: "wrap" }}>
+                  <div>
+                    <h1 style={{ margin: "0 0 6px", fontSize: "1.35rem", fontWeight: 700 }}>Surveillance comportementale</h1>
+                    <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--muted, #94a3b8)" }}>
+                      Analyse automatique des comportements on-chain — vendeurs &amp; acheteurs
+                    </p>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                    {anomalyAnalyzedAt && (
+                      <div style={{
+                        display: "flex", alignItems: "center", gap: "6px",
+                        background: "#22c55e18", border: "1px solid #22c55e40",
+                        borderRadius: "8px", padding: "6px 12px",
+                        fontSize: "0.78rem", color: "#22c55e",
+                      }}>
+                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#22c55e", display: "inline-block" }}></span>
+                        Dernière analyse : {anomalyAnalyzedAt}
+                      </div>
+                    )}
+                    <button className="primary-btn" onClick={loadAnomalies} disabled={loadingAnomalies} style={{ whiteSpace: "nowrap" }}>
+                      <i className={`bi bi-arrow-clockwise${loadingAnomalies ? " spin" : ""}`}></i>
+                      {loadingAnomalies ? "Analyse..." : "Lancer l'analyse"}
+                    </button>
+                  </div>
                 </div>
-                <button className="primary-btn" onClick={loadAnomalies} disabled={loadingAnomalies}>
-                  <i className={`bi bi-arrow-clockwise${loadingAnomalies ? " spin" : ""}`}></i>
-                  {loadingAnomalies ? "Analyse..." : "Lancer la détection"}
-                </button>
               </div>
 
-              {!anomalyData && !loadingAnomalies && (
-                <div className="empty-state">
-                  <i className="bi bi-shield-exclamation"></i>
-                  <h3>Aucune analyse lancée</h3>
-                  <p>Clique sur "Lancer la détection" pour analyser les données blockchain.</p>
-                </div>
-              )}
+              <div style={{ padding: "24px 32px" }}>
 
-              {loadingAnomalies && (
-                <div className="empty-state">
-                  <div className="loader"></div>
-                  <h3>Analyse en cours...</h3>
-                  <p>Les modèles ML analysent les comportements on-chain.</p>
-                </div>
-              )}
+                {/* État vide */}
+                {!anomalyData && !loadingAnomalies && (
+                  <div style={{ textAlign: "center", padding: "60px 20px" }}>
+                    <div style={{
+                      width: 64, height: 64, borderRadius: "50%",
+                      background: "#6366f118", border: "1px solid #6366f140",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      margin: "0 auto 20px",
+                    }}>
+                      <i className="bi bi-shield-lock" style={{ fontSize: "1.6rem", color: "#6366f1" }}></i>
+                    </div>
+                    <h3 style={{ margin: "0 0 8px", fontSize: "1.1rem" }}>Aucune analyse en cours</h3>
+                    <p style={{ margin: "0 0 20px", color: "var(--muted)", fontSize: "0.88rem" }}>
+                      Lancez une analyse pour détecter les comportements atypiques sur la blockchain.
+                    </p>
+                    <button className="primary-btn" onClick={loadAnomalies}>
+                      <i className="bi bi-play-fill"></i> Lancer l'analyse
+                    </button>
+                  </div>
+                )}
 
-              {anomalyData && !loadingAnomalies && (() => {
-                const s = anomalyData.summary || {};
-                const anomalies = anomalyData.anomalies || [];
-                return (
+                {/* Chargement */}
+                {loadingAnomalies && (
+                  <div style={{ textAlign: "center", padding: "60px 20px" }}>
+                    <div className="loader" style={{ margin: "0 auto 20px" }}></div>
+                    <h3 style={{ margin: "0 0 8px", fontSize: "1.1rem" }}>Analyse en cours</h3>
+                    <p style={{ margin: 0, color: "var(--muted)", fontSize: "0.88rem" }}>Traitement des données on-chain et analyse comportementale...</p>
+                  </div>
+                )}
+
+                {anomalyData && !loadingAnomalies && (
                   <>
-                    {/* Résumé */}
-                    <div className="ai-kpi-grid" style={{ marginBottom: "28px" }}>
-                      <div className="ai-kpi">
-                        <i className="bi bi-exclamation-triangle-fill" style={{ color: "#f97316" }}></i>
-                        <strong>{s.total ?? 0}</strong>
-                        <span>Anomalies totales</span>
-                      </div>
-                      <div className="ai-kpi">
-                        <i className="bi bi-shop" style={{ color: "#818cf8" }}></i>
-                        <strong>{s.sellers ?? 0}</strong>
-                        <span>Vendeurs suspects</span>
-                      </div>
-                      <div className="ai-kpi">
-                        <i className="bi bi-person" style={{ color: "#4f8cff" }}></i>
-                        <strong>{s.buyers ?? 0}</strong>
-                        <span>Acheteurs suspects</span>
-                      </div>
-                      <div className="ai-kpi">
-                        <i className="bi bi-shield-fill-x" style={{ color: "#ef4444" }}></i>
-                        <strong>{s.high ?? 0}</strong>
-                        <span>Haute sévérité</span>
-                      </div>
-                      <div className="ai-kpi">
-                        <i className="bi bi-shield-fill-exclamation" style={{ color: "#fbbf24" }}></i>
-                        <strong>{s.medium ?? 0}</strong>
-                        <span>Sévérité moyenne</span>
-                      </div>
+                    {/* ── Métriques résumé ── */}
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "12px", marginBottom: "28px" }}>
+                      {[
+                        { value: allAnomalies.length, label: "Alertes totales",     color: "#f97316", icon: "bi-bell-fill" },
+                        { value: s.high ?? 0,         label: "Critiques",           color: "#ef4444", icon: "bi-shield-fill-x" },
+                        { value: s.medium ?? 0,       label: "Élevées",             color: "#fbbf24", icon: "bi-shield-fill-exclamation" },
+                        { value: s.sellers ?? 0,      label: "Vendeurs suspects",   color: "#818cf8", icon: "bi-shop" },
+                        { value: s.buyers ?? 0,       label: "Acheteurs suspects",  color: "#4f8cff", icon: "bi-person" },
+                      ].map((m, i) => (
+                        <div key={i} style={{
+                          background: "var(--card-bg, #1e293b)",
+                          border: "1px solid var(--border, #334155)",
+                          borderRadius: "10px", padding: "16px",
+                          display: "flex", flexDirection: "column", gap: "8px",
+                        }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                            <i className={`bi ${m.icon}`} style={{ color: m.color, fontSize: "1rem" }}></i>
+                            <div style={{
+                              width: 8, height: 8, borderRadius: "50%",
+                              background: m.value > 0 ? m.color : "#334155",
+                            }} />
+                          </div>
+                          <strong style={{ fontSize: "1.6rem", fontWeight: 700, color: m.value > 0 ? m.color : "var(--text)", lineHeight: 1 }}>{m.value}</strong>
+                          <span style={{ fontSize: "0.75rem", color: "var(--muted)", lineHeight: 1.3 }}>{m.label}</span>
+                        </div>
+                      ))}
                     </div>
 
-                    {anomalies.length === 0 ? (
-                      <div className="empty-state">
-                        <i className="bi bi-shield-check" style={{ color: "#22c55e" }}></i>
-                        <h3>Aucune anomalie détectée</h3>
-                        <p>Tous les vendeurs et acheteurs présentent un comportement normal.</p>
+                    {/* ── Filtres ── */}
+                    <div style={{
+                      display: "flex", gap: "2px", marginBottom: "20px",
+                      background: "var(--card-bg, #1e293b)",
+                      border: "1px solid var(--border, #334155)",
+                      borderRadius: "10px", padding: "4px",
+                      width: "fit-content",
+                    }}>
+                      {[
+                        { key: "all",     label: "Toutes",   count: allAnomalies.length },
+                        { key: "high",    label: "Critiques",count: s.high ?? 0 },
+                        { key: "sellers", label: "Vendeurs", count: s.sellers ?? 0 },
+                        { key: "buyers",  label: "Acheteurs",count: s.buyers ?? 0 },
+                      ].map(tab => (
+                        <button key={tab.key} onClick={() => setAnomalyFilter(tab.key)} style={{
+                          background: anomalyFilter === tab.key ? "var(--primary, #6366f1)" : "transparent",
+                          color: anomalyFilter === tab.key ? "#fff" : "var(--muted, #94a3b8)",
+                          border: "none", borderRadius: "7px",
+                          padding: "6px 16px", fontSize: "0.8rem", fontWeight: 600,
+                          cursor: "pointer", transition: "all 0.15s",
+                          display: "flex", alignItems: "center", gap: "6px",
+                        }}>
+                          {tab.label}
+                          <span style={{
+                            background: anomalyFilter === tab.key ? "rgba(255,255,255,0.2)" : "var(--border, #334155)",
+                            borderRadius: "99px", padding: "1px 7px", fontSize: "0.72rem", fontWeight: 700,
+                          }}>{tab.count}</span>
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* ── Liste des alertes ── */}
+                    {filteredAnomalies.length === 0 ? (
+                      <div style={{ textAlign: "center", padding: "40px 20px" }}>
+                        <i className="bi bi-shield-check" style={{ fontSize: "2rem", color: "#22c55e" }}></i>
+                        <p style={{ margin: "12px 0 0", color: "var(--muted)" }}>Aucune alerte dans cette catégorie.</p>
                       </div>
                     ) : (
-                      <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                        {anomalies.map((a, idx) => (
-                          <div
-                            key={idx}
-                            style={{
+                      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                        {filteredAnomalies.map((a, idx) => {
+                          const isHigh   = a.severity === "high";
+                          const isSeller = a.entity === "seller";
+                          const sev = severityCfg[a.severity] || severityCfg.medium;
+                          const ent = entityCfg[a.entity]    || entityCfg.buyer;
+                          const pct = scoreToPercent(a.anomaly_score);
+                          const rs  = riskScore(a.anomaly_score);
+                          return (
+                            <div key={idx} style={{
                               background: "var(--card-bg, #1e293b)",
-                              border: `1px solid ${a.severity === "high" ? "#ef4444" : "#fbbf24"}`,
+                              border: `1px solid ${sev.border}`,
                               borderRadius: "10px",
-                              padding: "16px 20px",
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: "8px",
-                            }}
-                          >
-                            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-                              <span style={{
-                                background: a.severity === "high" ? "#ef444422" : "#fbbf2422",
-                                color:      a.severity === "high" ? "#ef4444"   : "#fbbf24",
-                                borderRadius: "6px", padding: "2px 10px", fontSize: "0.75rem", fontWeight: 700,
-                              }}>
-                                {a.severity === "high" ? "HAUTE" : "MOYENNE"}
-                              </span>
-                              <span style={{
-                                background: a.entity === "seller" ? "#818cf822" : "#4f8cff22",
-                                color:      a.entity === "seller" ? "#818cf8"   : "#4f8cff",
-                                borderRadius: "6px", padding: "2px 10px", fontSize: "0.75rem", fontWeight: 700,
-                              }}>
-                                <i className={`bi ${a.entity === "seller" ? "bi-shop" : "bi-person"}`}></i>{" "}
-                                {a.entity === "seller" ? "Vendeur" : "Acheteur"}
-                              </span>
-                              <code style={{ fontSize: "0.85rem", color: "var(--muted, #94a3b8)" }}>{a.label}</code>
-                              <span style={{ marginLeft: "auto", fontSize: "0.78rem", color: "var(--muted, #94a3b8)" }}>
-                                score : {a.anomaly_score}
-                              </span>
-                            </div>
-                            <p style={{ margin: 0, fontSize: "0.9rem" }}>{a.description}</p>
-                            <details style={{ fontSize: "0.82rem", color: "var(--muted, #94a3b8)" }}>
-                              <summary style={{ cursor: "pointer" }}>Détails des métriques</summary>
-                              <div style={{ marginTop: "8px", display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                                {Object.entries(a.features || {}).map(([k, v]) => (
-                                  <span key={k} style={{
-                                    background: "#ffffff0a", borderRadius: "6px",
-                                    padding: "3px 10px", fontSize: "0.78rem",
+                              overflow: "hidden",
+                            }}>
+                              {/* Bande couleur top */}
+                              <div style={{ height: "3px", background: sev.color, width: "100%" }} />
+
+                              <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: "12px" }}>
+                                {/* Ligne principale */}
+                                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                                  {/* Sévérité */}
+                                  <span style={{
+                                    background: sev.bg, color: sev.color,
+                                    border: `1px solid ${sev.border}`,
+                                    borderRadius: "6px", padding: "3px 10px",
+                                    fontSize: "0.7rem", fontWeight: 800, letterSpacing: "0.08em",
+                                  }}>{sev.label}</span>
+
+                                  {/* Entité */}
+                                  <span style={{
+                                    background: ent.bg, color: ent.color,
+                                    borderRadius: "6px", padding: "3px 10px",
+                                    fontSize: "0.7rem", fontWeight: 700,
+                                    display: "flex", alignItems: "center", gap: "4px",
                                   }}>
-                                    <strong>{k}</strong>: {typeof v === "number" ? v.toFixed(4) : v}
+                                    <i className={`bi ${ent.icon}`}></i> {ent.label}
                                   </span>
-                                ))}
+
+                                  {/* Adresse */}
+                                  <code style={{
+                                    fontSize: "0.8rem", color: "var(--muted, #94a3b8)",
+                                    background: "#ffffff08", borderRadius: "5px",
+                                    padding: "2px 8px", flex: 1, minWidth: 0,
+                                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                  }}>{a.label}</code>
+
+                                  {/* Risk score */}
+                                  <div style={{
+                                    display: "flex", alignItems: "center", gap: "6px",
+                                    background: sev.bg, border: `1px solid ${sev.border}`,
+                                    borderRadius: "8px", padding: "4px 12px",
+                                  }}>
+                                    <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>Risque</span>
+                                    <strong style={{ fontSize: "1rem", color: sev.color, fontVariantNumeric: "tabular-nums" }}>{rs}</strong>
+                                    <span style={{ fontSize: "0.65rem", color: "var(--muted)" }}>/100</span>
+                                  </div>
+                                </div>
+
+                                {/* Description */}
+                                <p style={{ margin: 0, fontSize: "0.88rem", color: "var(--text, #e2e8f0)", fontWeight: 500 }}>{a.description}</p>
+
+                                {/* Barre de risque */}
+                                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                                  <span style={{ fontSize: "0.7rem", color: "var(--muted)", whiteSpace: "nowrap", minWidth: 80 }}>Score de risque</span>
+                                  <div style={{ flex: 1, background: "#ffffff08", borderRadius: "99px", height: "5px", overflow: "hidden" }}>
+                                    <div style={{
+                                      width: `${pct}%`, height: "100%", borderRadius: "99px",
+                                      background: isHigh
+                                        ? "linear-gradient(90deg,#f97316,#ef4444)"
+                                        : "linear-gradient(90deg,#fbbf24,#f97316)",
+                                      transition: "width 0.8s ease",
+                                    }} />
+                                  </div>
+                                  <span style={{ fontSize: "0.7rem", color: sev.color, fontWeight: 700, minWidth: 32, textAlign: "right" }}>{pct}%</span>
+                                </div>
+
+                                {/* Métriques détail */}
+                                <details>
+                                  <summary style={{
+                                    cursor: "pointer", fontSize: "0.78rem",
+                                    color: "var(--muted, #94a3b8)", userSelect: "none",
+                                    display: "flex", alignItems: "center", gap: "6px", listStyle: "none",
+                                  }}>
+                                    <i className="bi bi-chevron-right" style={{ fontSize: "0.65rem", transition: "transform 0.2s" }}></i>
+                                    Indicateurs comportementaux ({Object.keys(a.features || {}).length})
+                                  </summary>
+                                  <div style={{
+                                    marginTop: "12px",
+                                    display: "grid",
+                                    gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+                                    gap: "6px",
+                                  }}>
+                                    {Object.entries(a.features || {}).map(([k, v]) => {
+                                      const isNLP = NLP_FEATURES.includes(k);
+                                      return (
+                                        <div key={k} style={{
+                                          background: isNLP ? "#7c3aed12" : "#ffffff06",
+                                          border: `1px solid ${isNLP ? "#7c3aed40" : "var(--border, #334155)"}`,
+                                          borderRadius: "7px", padding: "8px 12px",
+                                          display: "flex", justifyContent: "space-between", alignItems: "center",
+                                        }}>
+                                          <span style={{ fontSize: "0.75rem", color: isNLP ? "#a78bfa" : "var(--muted)", display: "flex", alignItems: "center", gap: "5px" }}>
+                                            {isNLP && <i className="bi bi-stars" style={{ fontSize: "0.7rem" }}></i>}
+                                            {k}
+                                          </span>
+                                          <strong style={{ fontSize: "0.82rem", color: isNLP ? "#c4b5fd" : "var(--text)", fontVariantNumeric: "tabular-nums" }}>
+                                            {typeof v === "number" ? v.toFixed(4) : v}
+                                          </strong>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </details>
                               </div>
-                            </details>
-                          </div>
-                        ))}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </>
-                );
-              })()}
+                )}
+              </div>
             </section>
-          )}
+            );
+          })()}
 
           {activePage === "monitoring" && userRole === "admin" && (
             <MonitoringRecommendation />
