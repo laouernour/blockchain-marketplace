@@ -590,6 +590,7 @@ function App() {
     }
   }, [activePage]);
 
+
   // Garde : rediriger vers la bonne page selon le rôle
   useEffect(() => {
     if (!account) return;
@@ -2118,19 +2119,11 @@ function App() {
               <div className="page-head">
                 <div>
                   <span className="eyebrow">Administration</span>
-                  <h1>Dashboard Admin</h1>
+                  <h1>Gestion de la plateforme</h1>
                 </div>
                 <button className="primary-btn" onClick={() => Promise.all([loadProducts(), loadAllOrders(), getDelivererCandidates().then(d => setDelivererCandidates(d))])}>
                   <i className="bi bi-arrow-clockwise"></i> Actualiser
                 </button>
-              </div>
-
-              {/* KPIs plateforme */}
-              <div className="metrics-grid">
-                <div><span>Total produits</span><strong>{products.length}</strong></div>
-                <div><span>Total commandes</span><strong>{allOrders.length}</strong></div>
-                <div><span>Litiges en cours</span><strong>{allOrders.filter(o => o.disputed && !o.released).length}</strong></div>
-                <div><span>Volume total</span><strong>{allOrders.reduce((s, o) => s + Number(o.amount || 0), 0).toFixed(4)} ETH</strong></div>
               </div>
 
               {/* Litiges à résoudre */}
@@ -2348,210 +2341,245 @@ function App() {
           )}
 
           {activePage === "blockchain" && (userRole === "seller" || userRole === "admin") && (
-            <section className="page-card">
-              <div className="page-head">
-                <div>
-                  <span className="eyebrow">Smart Contract</span>
-                  <h1>Données Blockchain</h1>
-                  <p>Toutes les données écrites dans le smart contract Ethereum — source de vérité immuable.</p>
+            <section className="page-card" style={{ padding: 0, overflow: "hidden" }}>
+              {/* Header */}
+              <div style={{ padding: "28px 32px 20px", borderBottom: "1px solid var(--border,#334155)" }}>
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+                  <div>
+                    <h1 style={{ margin: "0 0 6px", fontSize: "1.35rem", fontWeight: 700 }}>Données Blockchain</h1>
+                    {chainData && (
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
+                        <code style={{ fontSize: "0.75rem", color: "var(--muted)", background: "#ffffff08", padding: "2px 8px", borderRadius: 5 }}>
+                          Contrat : {chainData.contractAddress}
+                        </code>
+                        <code style={{ fontSize: "0.75rem", color: "var(--muted)", background: "#ffffff08", padding: "2px 8px", borderRadius: 5 }}>
+                          Admin : {chainData.admin}
+                        </code>
+                      </div>
+                    )}
+                  </div>
+                  <button className="primary-btn" onClick={loadChainData} disabled={loadingChainData}>
+                    <i className={`bi bi-arrow-clockwise${loadingChainData ? " spin" : ""}`}></i>
+                    {loadingChainData ? "Lecture..." : "Lire la blockchain"}
+                  </button>
                 </div>
-                <button className="primary-btn" onClick={loadChainData} disabled={loadingChainData}>
-                  <i className={`bi bi-arrow-clockwise${loadingChainData ? " spin" : ""}`}></i>
-                  {loadingChainData ? "Lecture..." : "Lire la blockchain"}
-                </button>
               </div>
 
-              {!chainData && !loadingChainData && (
-                <div className="empty-state">
-                  <i className="bi bi-database"></i>
-                  <h3>Données non chargées</h3>
-                  <p>Clique sur "Lire la blockchain" pour afficher toutes les données du smart contract.</p>
-                </div>
-              )}
+              <div style={{ padding: "24px 32px" }}>
 
-              {loadingChainData && (
-                <div className="empty-state">
-                  <div className="loader"></div>
-                  <h3>Lecture du smart contract...</h3>
-                  <p>Récupération de toutes les données on-chain.</p>
-                </div>
-              )}
-
-              {chainData && !loadingChainData && (
-                <>
-                  {/* Infos contrat */}
-                  <div className="chain-contract-info">
-                    <div>
-                      <small>Adresse du contrat</small>
-                      <code>{chainData.contractAddress}</code>
+                {!chainData && !loadingChainData && (
+                  <div style={{ textAlign: "center", padding: "60px 20px" }}>
+                    <div style={{ width: 64, height: 64, borderRadius: "50%", background: "#6366f118", border: "1px solid #6366f140", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
+                      <i className="bi bi-database" style={{ fontSize: "1.6rem", color: "#6366f1" }}></i>
                     </div>
-                    <div>
-                      <small>Administrateur</small>
-                      <code>{chainData.admin}</code>
-                    </div>
+                    <h3 style={{ margin: "0 0 8px" }}>Données non chargées</h3>
+                    <p style={{ margin: "0 0 20px", color: "var(--muted)", fontSize: "0.88rem" }}>Clique sur "Lire la blockchain" pour afficher toutes les données du smart contract.</p>
+                    <button className="primary-btn" onClick={loadChainData}>
+                      <i className="bi bi-database-check"></i> Lire la blockchain
+                    </button>
                   </div>
+                )}
 
-                  {/* Compteurs */}
-                  <div className="chain-stats">
-                    <div className="chain-stat">
-                      <i className="bi bi-shop" style={{ color: "#38bdf8" }}></i>
-                      <strong>{chainData.counts.stores}</strong>
-                      <span>Boutiques</span>
-                    </div>
-                    <div className="chain-stat">
-                      <i className="bi bi-box-seam" style={{ color: "#818cf8" }}></i>
-                      <strong>{chainData.counts.products}</strong>
-                      <span>Produits</span>
-                    </div>
-                    <div className="chain-stat">
-                      <i className="bi bi-receipt" style={{ color: "#4f8cff" }}></i>
-                      <strong>{chainData.counts.orders}</strong>
-                      <span>Commandes</span>
-                    </div>
-                    <div className="chain-stat">
-                      <i className="bi bi-star-fill" style={{ color: "#fbbf24" }}></i>
-                      <strong>{chainData.counts.reviews}</strong>
-                      <span>Avis</span>
-                    </div>
+                {loadingChainData && (
+                  <div style={{ textAlign: "center", padding: "60px 20px" }}>
+                    <div className="loader" style={{ margin: "0 auto 20px" }}></div>
+                    <p style={{ color: "var(--muted)", fontSize: "0.88rem" }}>Lecture du smart contract en cours...</p>
                   </div>
+                )}
 
-                  {/* Onglets */}
-                  <div className="chain-tabs">
-                    {[
-                      { id: "overview", label: "Vue d'ensemble" },
-                      { id: "stores",   label: `Boutiques (${chainData.counts.stores})` },
-                      { id: "products", label: `Produits (${chainData.counts.products})` },
-                      { id: "orders",   label: `Commandes (${chainData.counts.orders})` },
-                      { id: "reviews",  label: `Avis (${chainData.counts.reviews})` },
-                    ].map(t => (
-                      <button key={t.id} className={`chain-tab${chainTab === t.id ? " active" : ""}`} onClick={() => setChainTab(t.id)}>
-                        {t.label}
-                      </button>
-                    ))}
-                  </div>
+                {chainData && !loadingChainData && (() => {
+                  const noAddr = "0x0000000000000000000000000000000000000000";
+                  const fmtDate = (ts) => ts > 0 ? new Date(ts * 1000).toLocaleString("fr-FR") : "—";
+                  const fmtAddr = (a) => a && a !== noAddr ? `${a.slice(0,6)}…${a.slice(-4)}` : null;
+                  const isText = (s) => typeof s === "string" && s.length > 3 && !s.startsWith("Qm") && !s.startsWith("bafy");
+                  const sellerOf = (productId) => {
+                    const p = chainData.products.find(p => p.id === productId);
+                    return p ? p.seller : null;
+                  };
+                  const storeNameOf = (storeId) => {
+                    const s = chainData.stores.find(s => s.id === storeId);
+                    return s ? s.name : `#${storeId}`;
+                  };
 
-                  {/* Vue d'ensemble */}
-                  {chainTab === "overview" && (
-                    <div className="chain-overview">
-                      <div className="chain-overview-block">
-                        <h3><i className="bi bi-shop"></i> Boutiques</h3>
-                        {chainData.stores.map(s => (
-                          <div key={s.id} className="chain-row">
-                            <span className="chain-id">Store #{s.id}</span>
-                            <span className="chain-name">{s.name}</span>
-                            <code className="chain-addr">{s.owner}</code>
-                            <span className="chain-ipfs" title={s.ipfsHash}>{s.ipfsHash ? s.ipfsHash.slice(0,20)+"…" : "—"}</span>
+                  const statusCfg = (o) => {
+                    if (o.refundApproved)                 return { label: "Retour approuvé",  color: "#a3e635", bg: "#a3e63518" };
+                    if (o.refundRequested)                return { label: "Retour demandé",   color: "#fb923c", bg: "#fb923c18" };
+                    if (o.disputeResolved && o.buyerWon)  return { label: "Remboursé",        color: "#fb7185", bg: "#fb718518" };
+                    if (o.disputeResolved)                return { label: "Litige → Vendeur", color: "#22c55e", bg: "#22c55e18" };
+                    if (o.disputed)                       return { label: "En litige",        color: "#fbbf24", bg: "#fbbf2418" };
+                    if (o.released)                       return { label: "Payé",             color: "#22c55e", bg: "#22c55e18" };
+                    if (o.delivered)                      return { label: "Livré",            color: "#4f8cff", bg: "#4f8cff18" };
+                    return                                       { label: "En attente",       color: "#94a3b8", bg: "#94a3b818" };
+                  };
+
+                  const tabs = [
+                    { id: "stores",   label: "Boutiques",  count: chainData.counts.stores,         icon: "bi-shop",      color: "#38bdf8" },
+                    { id: "products", label: "Produits",   count: chainData.counts.products,       icon: "bi-box-seam",  color: "#818cf8" },
+                    { id: "orders",   label: "Commandes",  count: chainData.counts.orders,         icon: "bi-receipt",   color: "#4f8cff" },
+                    { id: "reviews",  label: "Avis",       count: chainData.counts.reviews,        icon: "bi-star-fill", color: "#fbbf24" },
+                    { id: "actors",   label: "Acteurs",    count: chainData.counts.actors ?? 0,    icon: "bi-people",    color: "#34d399" },
+                  ];
+
+                  const cell = (content, muted) => (
+                    <span style={{ fontSize: "0.8rem", color: muted ? "var(--muted)" : "var(--text,#e2e8f0)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {content}
+                    </span>
+                  );
+
+                  return (
+                    <>
+                      {/* Compteurs */}
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 24 }}>
+                        {tabs.map(t => (
+                          <div key={t.id} style={{ background: "var(--card-bg,#1e293b)", border: "1px solid var(--border,#334155)", borderRadius: 10, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}
+                            onClick={() => setChainTab(t.id)}>
+                            <i className={`bi ${t.icon}`} style={{ fontSize: "1.2rem", color: t.color }}></i>
+                            <div>
+                              <strong style={{ fontSize: "1.4rem", color: t.color, lineHeight: 1 }}>{t.count}</strong>
+                              <div style={{ fontSize: "0.72rem", color: "var(--muted)", marginTop: 2 }}>{t.label}</div>
+                            </div>
                           </div>
                         ))}
                       </div>
-                      <div className="chain-overview-block">
-                        <h3><i className="bi bi-box-seam"></i> Produits</h3>
-                        {chainData.products.map(p => (
-                          <div key={p.id} className="chain-row">
-                            <span className="chain-id">Prod #{p.id}</span>
-                            <span className="chain-price">{p.price} ETH</span>
-                            <span className="chain-stock">Stock: {p.stock}</span>
-                            <code className="chain-addr">{p.seller}</code>
-                          </div>
+
+                      {/* Tabs */}
+                      <div style={{ display: "flex", gap: 2, marginBottom: 20, background: "var(--card-bg,#1e293b)", border: "1px solid var(--border,#334155)", borderRadius: 10, padding: 4, width: "fit-content" }}>
+                        {tabs.map(t => (
+                          <button key={t.id} onClick={() => setChainTab(t.id)} style={{
+                            background: chainTab === t.id ? "var(--primary,#6366f1)" : "transparent",
+                            color: chainTab === t.id ? "#fff" : "var(--muted)",
+                            border: "none", borderRadius: 7, padding: "6px 16px",
+                            fontSize: "0.8rem", fontWeight: 600, cursor: "pointer",
+                            display: "flex", alignItems: "center", gap: 6,
+                          }}>
+                            <i className={`bi ${t.icon}`}></i> {t.label}
+                            <span style={{ background: chainTab === t.id ? "rgba(255,255,255,0.2)" : "var(--border,#334155)", borderRadius: 99, padding: "1px 7px", fontSize: "0.72rem" }}>{t.count}</span>
+                          </button>
                         ))}
                       </div>
-                    </div>
-                  )}
 
-                  {/* Boutiques */}
-                  {chainTab === "stores" && (
-                    <div className="chain-table">
-                      <div className="chain-thead" style={{ gridTemplateColumns: "0.5fr 1.5fr 2.5fr 2fr" }}>
-                        <span>ID</span><span>Nom</span><span>Propriétaire</span><span>IPFS Hash</span>
-                      </div>
-                      {chainData.stores.map(s => (
-                        <div key={s.id} className="chain-trow" style={{ gridTemplateColumns: "0.5fr 1.5fr 2.5fr 2fr" }}>
-                          <span className="chain-id">#{s.id}</span>
-                          <strong>{s.name}</strong>
-                          <code>{s.owner}</code>
-                          <a href={`https://gateway.pinata.cloud/ipfs/${s.ipfsHash}`} target="_blank" rel="noreferrer" className="chain-ipfs-link">{s.ipfsHash ? s.ipfsHash.slice(0,24)+"…" : "—"}</a>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Produits */}
-                  {chainTab === "products" && (
-                    <div className="chain-table">
-                      <div className="chain-thead" style={{ gridTemplateColumns: "0.5fr 0.6fr 1fr 0.7fr 2.5fr 1.8fr" }}>
-                        <span>ID</span><span>Store</span><span>Prix</span><span>Stock</span><span>Vendeur</span><span>IPFS Hash</span>
-                      </div>
-                      {chainData.products.map(p => (
-                        <div key={p.id} className="chain-trow" style={{ gridTemplateColumns: "0.5fr 0.6fr 1fr 0.7fr 2.5fr 1.8fr" }}>
-                          <span className="chain-id">#{p.id}</span>
-                          <span>#{p.storeId}</span>
-                          <strong>{p.price} ETH</strong>
-                          <span>{p.stock}</span>
-                          <code>{p.seller}</code>
-                          <a href={`https://gateway.pinata.cloud/ipfs/${p.ipfsHash}`} target="_blank" rel="noreferrer" className="chain-ipfs-link">{p.ipfsHash ? p.ipfsHash.slice(0,20)+"…" : "—"}</a>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Commandes */}
-                  {chainTab === "orders" && (
-                    <div className="chain-table">
-                      <div className="chain-thead" style={{ gridTemplateColumns: "0.4fr 0.5fr 0.8fr 2fr 2fr 1.6fr 1.8fr" }}>
-                        <span>ID</span><span>Prod</span><span>Montant</span><span>Acheteur</span><span>Livreur</span><span>Statut</span><span>Dispute IPFS</span>
-                      </div>
-                      {chainData.orders.map(o => {
-                        let statut = "En attente";
-                        let sClass = "pending";
-                        if (o.disputeResolved && o.buyerWon) { statut = "Remboursé"; sClass = "refunded"; }
-                        else if (o.disputeResolved) { statut = "Litige → Vendeur"; sClass = "ok"; }
-                        else if (o.disputed) { statut = "En litige"; sClass = "disputed"; }
-                        else if (o.released && !o.delivered) { statut = "Remboursé"; sClass = "refunded"; }
-                        else if (o.released) { statut = "Payé"; sClass = "ok"; }
-                        else if (o.delivered) { statut = "Livré"; sClass = "delivered"; }
-                        const noAddr = "0x0000000000000000000000000000000000000000";
-                        return (
-                          <div key={o.id} className="chain-trow" style={{ gridTemplateColumns: "0.4fr 0.5fr 0.8fr 2fr 2fr 1.6fr 1.8fr" }}>
-                            <span className="chain-id">#{o.id}</span>
-                            <span>#{o.productId}</span>
-                            <strong>{o.amount} ETH</strong>
-                            <code>{o.buyer}</code>
-                            <code>{o.deliverer === noAddr ? <em style={{ color: "var(--muted)" }}>Non assigné</em> : o.deliverer}</code>
-                            <em className={sClass}>{statut}</em>
-                            <span>{o.disputeIpfsHash ? <a href={`https://gateway.pinata.cloud/ipfs/${o.disputeIpfsHash}`} target="_blank" rel="noreferrer" className="chain-ipfs-link">{o.disputeIpfsHash.slice(0,16)}…</a> : "—"}</span>
+                      {/* ── BOUTIQUES ── */}
+                      {chainTab === "stores" && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          {/* Header */}
+                          <div style={{ display: "grid", gridTemplateColumns: "40px 1fr 2fr 2fr", gap: 12, padding: "8px 16px", fontSize: "0.72rem", color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                            <span>ID</span><span>Nom</span><span>Propriétaire</span><span>IPFS Hash</span>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Avis */}
-                  {chainTab === "reviews" && (
-                    chainData.reviews.length === 0 ? (
-                      <div className="empty-state">
-                        <i className="bi bi-star"></i>
-                        <h3>Aucun avis enregistré</h3>
-                      </div>
-                    ) : (
-                      <div className="chain-table">
-                        <div className="chain-thead" style={{ gridTemplateColumns: "0.5fr 0.7fr 0.7fr 0.7fr 2.5fr 2fr" }}>
-                          <span>ID</span><span>Produit</span><span>Commande</span><span>Note</span><span>Auteur</span><span>IPFS Hash</span>
+                          {chainData.stores.map(s => (
+                            <div key={s.id} style={{ display: "grid", gridTemplateColumns: "40px 1fr 2fr 2fr", gap: 12, padding: "12px 16px", background: "var(--card-bg,#1e293b)", border: "1px solid var(--border,#334155)", borderRadius: 8, alignItems: "center" }}>
+                              <span style={{ fontWeight: 700, color: "#6366f1", fontSize: "0.82rem" }}>#{s.id}</span>
+                              <strong style={{ fontSize: "0.88rem" }}>{s.name}</strong>
+                              <code style={{ fontSize: "0.75rem", color: "var(--muted)" }}>{s.owner}</code>
+                              {cell(isText(s.ipfsHash) ? s.ipfsHash : (s.ipfsHash || "—"), true)}
+                            </div>
+                          ))}
                         </div>
-                        {chainData.reviews.map((r, i) => (
-                          <div key={i} className="chain-trow" style={{ gridTemplateColumns: "0.5fr 0.7fr 0.7fr 0.7fr 2.5fr 2fr" }}>
-                            <span className="chain-id">#{r.id}</span>
-                            <span>Prod #{r.productId}</span>
-                            <span>Cmd #{r.orderId}</span>
-                            <strong style={{ color: "#fbbf24" }}>{"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)}</strong>
-                            <code>{r.reviewer}</code>
-                            <a href={`https://gateway.pinata.cloud/ipfs/${r.ipfsHash}`} target="_blank" rel="noreferrer" className="chain-ipfs-link">{r.ipfsHash ? r.ipfsHash.slice(0,20)+"…" : "—"}</a>
+                      )}
+
+                      {/* ── PRODUITS ── */}
+                      {chainTab === "products" && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "40px 1fr 1fr 60px 70px 2fr 2fr", gap: 12, padding: "8px 16px", fontSize: "0.72rem", color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                            <span>ID</span><span>Boutique</span><span>Prix</span><span>Stock</span><span>Promo</span><span>Vendeur</span><span>IPFS</span>
                           </div>
-                        ))}
-                      </div>
-                    )
-                  )}
-                </>
-              )}
+                          {chainData.products.map(p => (
+                            <div key={p.id} style={{ display: "grid", gridTemplateColumns: "40px 1fr 1fr 60px 70px 2fr 2fr", gap: 12, padding: "12px 16px", background: "var(--card-bg,#1e293b)", border: `1px solid ${p.featured ? "#fbbf2440" : "var(--border,#334155)"}`, borderRadius: 8, alignItems: "center" }}>
+                              <span style={{ fontWeight: 700, color: "#818cf8", fontSize: "0.82rem" }}>#{p.id}</span>
+                              <span style={{ fontSize: "0.82rem" }}>{storeNameOf(p.storeId)}</span>
+                              <strong style={{ fontSize: "0.88rem", color: "#22c55e" }}>{p.price} ETH</strong>
+                              <span style={{ fontSize: "0.82rem", color: p.stock === 0 ? "#ef4444" : "var(--text)" }}>{p.stock}</span>
+                              {p.featured
+                                ? <span style={{ background: "#fbbf2418", color: "#fbbf24", borderRadius: 5, padding: "2px 6px", fontSize: "0.7rem", fontWeight: 700 }}>★ PROMO</span>
+                                : <span style={{ color: "var(--muted)", fontSize: "0.72rem" }}>—</span>
+                              }
+                              <code style={{ fontSize: "0.72rem", color: "var(--muted)" }}>{p.seller}</code>
+                              {cell(isText(p.ipfsHash) ? p.ipfsHash : (p.ipfsHash || "—"), true)}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* ── COMMANDES ── */}
+                      {chainTab === "orders" && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "40px 50px 90px 1fr 1fr 1fr 110px 130px 130px", gap: 10, padding: "8px 16px", fontSize: "0.72rem", color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                            <span>ID</span><span>Prod</span><span>Montant</span><span>Acheteur</span><span>Vendeur</span><span>Livreur</span><span>Statut</span><span>Créée le</span><span>Livrée le</span>
+                          </div>
+                          {chainData.orders.map(o => {
+                            const st = statusCfg(o);
+                            const vendor = sellerOf(o.productId);
+                            return (
+                              <div key={o.id} style={{ display: "grid", gridTemplateColumns: "40px 50px 90px 1fr 1fr 1fr 110px 130px 130px", gap: 10, padding: "12px 16px", background: "var(--card-bg,#1e293b)", border: "1px solid var(--border,#334155)", borderRadius: 8, alignItems: "center" }}>
+                                <span style={{ fontWeight: 700, color: "#4f8cff", fontSize: "0.82rem" }}>#{o.id}</span>
+                                <span style={{ fontSize: "0.8rem", color: "var(--muted)" }}>#{o.productId}</span>
+                                <strong style={{ fontSize: "0.85rem", color: "#22c55e" }}>{o.amount} ETH</strong>
+                                <code style={{ fontSize: "0.72rem", color: "var(--muted)" }} title={o.buyer}>{fmtAddr(o.buyer)}</code>
+                                <code style={{ fontSize: "0.72rem", color: "var(--muted)" }} title={vendor}>{vendor ? fmtAddr(vendor) : "—"}</code>
+                                <code style={{ fontSize: "0.72rem", color: "var(--muted)" }} title={o.deliverer}>{o.deliverer && o.deliverer !== noAddr ? fmtAddr(o.deliverer) : <em>Non assigné</em>}</code>
+                                <span style={{ background: st.bg, color: st.color, borderRadius: 6, padding: "3px 8px", fontSize: "0.72rem", fontWeight: 700, textAlign: "center" }}>{st.label}</span>
+                                <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>{fmtDate(o.createdAt)}</span>
+                                <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>{fmtDate(o.deliveryTimestamp)}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* ── ACTEURS ── */}
+                      {chainTab === "actors" && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "3fr 140px 120px 100px", gap: 12, padding: "8px 16px", fontSize: "0.72rem", color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                            <span>Adresse</span><span>Rôles</span><span>Livreur on-chain</span><span>Blacklisté</span>
+                          </div>
+                          {(chainData.actors || []).map((a, i) => (
+                            <div key={i} style={{ display: "grid", gridTemplateColumns: "3fr 140px 120px 100px", gap: 12, padding: "12px 16px", background: "var(--card-bg,#1e293b)", border: `1px solid ${a.blacklisted ? "#ef444440" : "var(--border,#334155)"}`, borderRadius: 8, alignItems: "center" }}>
+                              <code style={{ fontSize: "0.75rem", color: a.blacklisted ? "#ef4444" : "var(--text)", wordBreak: "break-all" }}>{a.address}</code>
+                              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                                {a.roles.map(r => {
+                                  const rCfg = { admin: ["#f43f5e","#f43f5e18"], vendeur: ["#818cf8","#818cf818"], acheteur: ["#38bdf8","#38bdf818"], livreur: ["#34d399","#34d39918"] };
+                                  const [col, bg] = rCfg[r] || ["#94a3b8","#94a3b818"];
+                                  return <span key={r} style={{ background: bg, color: col, borderRadius: 4, padding: "2px 7px", fontSize: "0.68rem", fontWeight: 700 }}>{r.toUpperCase()}</span>;
+                                })}
+                              </div>
+                              <span style={{ fontSize: "0.78rem", color: a.delivererOnChain ? "#34d399" : "var(--muted)" }}>
+                                {a.delivererOnChain ? "✓ Oui" : "—"}
+                              </span>
+                              <span style={{ fontSize: "0.78rem", color: a.blacklisted ? "#ef4444" : "var(--muted)" }}>
+                                {a.blacklisted ? "⛔ Oui" : "—"}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* ── AVIS ── */}
+                      {chainTab === "reviews" && (
+                        chainData.reviews.length === 0 ? (
+                          <div className="empty-state"><i className="bi bi-star"></i><h3>Aucun avis enregistré</h3></div>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "40px 60px 70px 100px 1fr 2fr", gap: 12, padding: "8px 16px", fontSize: "0.72rem", color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                              <span>ID</span><span>Produit</span><span>Commande</span><span>Note</span><span>Auteur</span><span>Commentaire</span>
+                            </div>
+                            {chainData.reviews.map((r, i) => (
+                              <div key={i} style={{ display: "grid", gridTemplateColumns: "40px 60px 70px 100px 1fr 2fr", gap: 12, padding: "12px 16px", background: "var(--card-bg,#1e293b)", border: "1px solid var(--border,#334155)", borderRadius: 8, alignItems: "center" }}>
+                                <span style={{ fontWeight: 700, color: "#fbbf24", fontSize: "0.82rem" }}>#{r.id}</span>
+                                <span style={{ fontSize: "0.8rem", color: "var(--muted)" }}>#{r.productId}</span>
+                                <span style={{ fontSize: "0.8rem", color: "var(--muted)" }}>#{r.orderId}</span>
+                                <span style={{ color: "#fbbf24", fontSize: "0.85rem", letterSpacing: 1 }}>{"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)}</span>
+                                <code style={{ fontSize: "0.72rem", color: "var(--muted)" }} title={r.reviewer}>{fmtAddr(r.reviewer)}</code>
+                                <span style={{ fontSize: "0.8rem", color: "var(--text)", fontStyle: isText(r.ipfsHash) ? "normal" : "italic" }}>
+                                  {isText(r.ipfsHash) ? r.ipfsHash : (r.ipfsHash ? `IPFS: ${r.ipfsHash.slice(0,20)}…` : "—")}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
             </section>
           )}
 

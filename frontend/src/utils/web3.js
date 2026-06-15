@@ -531,23 +531,27 @@ export const getBlockchainData = async () => {
     // Produits
     const products = [];
     for (let i = 1; i <= Number(productCount); i++) {
-      const p = await contract.products(i);
+      const [p, featured] = await Promise.all([contract.products(i), contract.featuredProduct(i)]);
       if (p.exists) products.push({
         id: Number(p.id), storeId: Number(p.storeId), seller: p.seller,
         price: formatEther(p.price), stock: Number(p.stock), ipfsHash: p.ipfsHash,
+        featured: featured,
       });
     }
 
     // Commandes
     const orders = [];
     for (let i = 1; i <= Number(orderCount); i++) {
-      const o = await contract.orders(i);
+      const [o, ts] = await Promise.all([contract.orders(i), contract.orderTimestamp(i)]);
       if (o.exists) orders.push({
         id: Number(o.id), productId: Number(o.productId), buyer: o.buyer,
         deliverer: o.deliverer, amount: formatEther(o.amount),
         delivered: o.delivered, released: o.released, disputed: o.disputed,
         disputeResolved: o.disputeResolved, buyerWon: o.buyerWon,
+        refundRequested: o.refundRequested || false,
+        refundApproved: o.refundApproved || false,
         deliveryTimestamp: Number(o.deliveryTimestamp),
+        createdAt: Number(ts),
         disputeIpfsHash: o.disputeIpfsHash,
       });
     }
@@ -565,6 +569,33 @@ export const getBlockchainData = async () => {
       }
     }
 
+    // Acteurs : collecte toutes les adresses uniques et vérifie leur statut on-chain
+    const noAddr = "0x0000000000000000000000000000000000000000";
+    const addrMap = new Map();
+    const addActor = (address, role) => {
+      if (!address || address === noAddr) return;
+      const key = address.toLowerCase();
+      if (!addrMap.has(key)) addrMap.set(key, { address, roles: new Set(), delivererOnChain: false, blacklisted: false });
+      addrMap.get(key).roles.add(role);
+    };
+    addActor(admin, "admin");
+    stores.forEach(s => addActor(s.owner, "vendeur"));
+    orders.forEach(o => {
+      addActor(o.buyer, "acheteur");
+      if (o.deliverer && o.deliverer !== noAddr) addActor(o.deliverer, "livreur");
+    });
+    const actors = [];
+    for (const [, actor] of addrMap) {
+      const [isDeliv, isBlack] = await Promise.all([
+        contract.isDeliverer(actor.address),
+        contract.blacklisted(actor.address),
+      ]);
+      actor.delivererOnChain = isDeliv;
+      actor.blacklisted = isBlack;
+      actor.roles = [...actor.roles];
+      actors.push(actor);
+    }
+
     return {
       contractAddress: CONTRACT_ADDRESS,
       admin,
@@ -573,11 +604,13 @@ export const getBlockchainData = async () => {
         products: Number(productCount),
         orders: Number(orderCount),
         reviews: reviews.length,
+        actors: actors.length,
       },
       stores,
       products,
       orders,
       reviews,
+      actors,
     };
   } catch (error) {
     console.error("Erreur getBlockchainData:", error);

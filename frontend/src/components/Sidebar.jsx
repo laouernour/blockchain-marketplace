@@ -20,7 +20,7 @@ function Sidebar({ activePage, setActivePage, productsCount = 0, ordersCount = 0
   ];
 
   const adminItems = [
-    { id: "admin-dashboard", label: "Dashboard Admin",      icon: "bi-shield-lock",        hint: "Vue d'ensemble" },
+    { id: "admin-dashboard", label: "Gestion plateforme",   icon: "bi-shield-lock",        hint: "Litiges, produits, livreurs" },
     { id: "ia",              label: "IA & Analytique",      icon: "bi-graph-up-arrow",     hint: "Data mining & ML" },
     { id: "anomalies",       label: "Détection d'anomalies",icon: "bi-shield-exclamation", hint: "IA sécurité" },
     { id: "blockchain",      label: "Données Blockchain",   icon: "bi-database-check",     hint: "Smart contract data" },

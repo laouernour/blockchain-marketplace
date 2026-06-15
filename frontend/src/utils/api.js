@@ -87,6 +87,7 @@ export const getAnomalies = async () => {
   }
 };
 
+
 export const removeDeliverer = async (address) => {
   try {
     const response = await fetch(`${API_BASE_URL}/deliverers/${address}`, {
