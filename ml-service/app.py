@@ -303,5 +303,5 @@ def analyze_reviews_batch():
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5001))
-    print(f"BlockBay ML Service → http://localhost:{port}")
+    print(f"BlockBay ML Service -> http://localhost:{port}")
     app.run(debug=True, port=port, use_reloader=False)

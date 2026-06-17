@@ -58,7 +58,7 @@ def _get_sentiment(text):
                 max_length=128, truncation=True,
                 framework="pt",
             )
-            print("[NLP] Modèle chargé ✓")
+            print("[NLP] Modele charge OK")
         except Exception as e:
             print(f"[NLP] ERREUR chargement : {e}")
             _sentiment_pipe = None
@@ -101,7 +101,7 @@ def analyze_sentiment_detail(text):
                 max_length=128, truncation=True,
                 framework="pt",
             )
-            print("[NLP] Modèle chargé ✓")
+            print("[NLP] Modele charge OK")
         except Exception as e:
             print(f"[NLP] ERREUR chargement : {e}")
             _sentiment_pipe = None

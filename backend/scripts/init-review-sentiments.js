@@ -129,6 +129,7 @@ async function readBlockchain() {
           const r = await contract.getReview(p.id, i);
           revs.push({
             productId: p.id,
+            orderId:   Number(r.orderId),
             reviewer:  r.reviewer.toLowerCase(),
             rating:    Number(r.rating),
             // Le seed stocke le commentaire directement dans ipfsHash
@@ -179,15 +180,10 @@ async function main() {
     process.exit(1);
   }
 
-  // 3. Associer chaque avis à une commande (buyer + productId)
-  const enriched = reviews.map(r => {
-    const matches = orders.filter(o => o.productId === r.productId && o.buyer === r.reviewer);
-    const best    = matches.length > 0 ? matches.reduce((a, b) => (a.id > b.id ? a : b)) : null;
-    return { ...r, orderId: best ? best.id : null };
-  });
-
-  const withOrder    = enriched.filter(r => r.orderId !== null);
-  const withoutOrder = enriched.filter(r => r.orderId === null);
+  // 3. Chaque avis porte déjà son orderId d'origine (stocké on-chain à la review)
+  const orderIds = new Set(orders.map(o => o.id));
+  const withOrder    = reviews.filter(r => r.orderId && orderIds.has(r.orderId));
+  const withoutOrder = reviews.filter(r => !r.orderId || !orderIds.has(r.orderId));
 
   if (withoutOrder.length > 0) {
     console.log(`⚠️  ${withoutOrder.length} avis sans commande associée (ignorés) :`);
