@@ -1982,8 +1982,8 @@ function App() {
                         const canRelease = order.delivered && !order.released && !order.disputed
                           && now >= order.deliveryTimestamp + 48 * 3600;
                         let statut = "En attente";
-                        if (order.disputed && order.disputeResolved && order.buyerWon) statut = "Remboursé";
-                        else if (order.disputed && order.disputeResolved && !order.buyerWon) statut = "Payé";
+                        if (order.disputeResolved && order.buyerWon) statut = "Remboursé";
+                        else if (order.disputeResolved && !order.buyerWon) statut = "Payé";
                         else if (order.disputed) statut = "En litige";
                         else if (order.released && !order.delivered) statut = "Remboursé";
                         else if (order.released) statut = "Payé";
@@ -2202,6 +2202,28 @@ function App() {
               <h2 style={{ margin: "28px 0 16px", fontWeight: 900 }}>
                 <i className="bi bi-truck"></i> Gestion des livreurs
               </h2>
+              <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+                <input
+                  type="text"
+                  placeholder="Adresse du livreur (0x...)"
+                  value={newDelivererAddress}
+                  onChange={e => setNewDelivererAddress(e.target.value)}
+                  style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "1px solid #334155", background: "#1e293b", color: "#fff" }}
+                />
+                <button className="primary-btn" onClick={async () => {
+                  if (!newDelivererAddress.trim()) { toast.error("Adresse obligatoire"); return; }
+                  const result = await registerAsDeliverer(newDelivererAddress.trim());
+                  if (result.success) {
+                    toast.success("Livreur ajouté");
+                    setNewDelivererAddress("");
+                    getDelivererCandidates().then(data => setDelivererCandidates(data));
+                  } else {
+                    toast.error(result.error || "Erreur");
+                  }
+                }}>
+                  <i className="bi bi-person-plus"></i> Ajouter
+                </button>
+              </div>
               {delivererCandidates.length === 0 ? (
                 <div className="empty-state"><i className="bi bi-person-x"></i><h3>Aucun livreur inscrit</h3></div>
               ) : (

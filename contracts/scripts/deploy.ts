@@ -1,6 +1,6 @@
 import hre from "hardhat";
 
-const ADMIN_ADDRESS = "0x1164697bb17EaB2DA95266b380d691A853a9ac08";
+const ADMIN_ADDRESS = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 
 async function main() {
   const { viem } = await hre.network.connect();

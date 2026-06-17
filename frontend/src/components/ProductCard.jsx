@@ -8,13 +8,28 @@ function shortAddress(address) {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
-function ipfsToUrl(value) {
+const GATEWAYS = [
+  "https://ipfs.io/ipfs/",
+  "https://w3s.link/ipfs/",
+  "https://dweb.link/ipfs/",
+];
+
+function ipfsToUrl(value, gatewayIndex = 0) {
   if (!value) return "";
-  if (value.startsWith("ipfs://")) {
-    const cid = value.replace("ipfs://", "");
-    return `https://gateway.pinata.cloud/ipfs/${cid}`;
-  }
+  const gw = GATEWAYS[gatewayIndex] || GATEWAYS[0];
+  if (value.startsWith("ipfs://")) return gw + value.replace("ipfs://", "");
+  if (value.startsWith("Qm") || value.startsWith("bafy")) return gw + value;
   return value;
+}
+
+function nextGateway(src) {
+  for (let i = 0; i < GATEWAYS.length - 1; i++) {
+    if (src.startsWith(GATEWAYS[i])) {
+      const cid = src.replace(GATEWAYS[i], "");
+      return GATEWAYS[i + 1] + cid;
+    }
+  }
+  return "";
 }
 
 function StarDisplay({ rating }) {
@@ -109,7 +124,15 @@ function ProductCard({
     <article className={`product-card ${isSoldOut ? "soldout" : ""}`}>
       <div className="product-media">
         {imageUrl ? (
-          <img src={imageUrl} alt={name} />
+          <img
+            src={imageUrl}
+            alt={name}
+            onError={(e) => {
+              const next = nextGateway(e.target.src);
+              if (next) { e.target.src = next; }
+              else { e.target.style.display = "none"; }
+            }}
+          />
         ) : (
           <div className="no-image">
             <i className="bi bi-image"></i>

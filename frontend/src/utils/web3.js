@@ -1,4 +1,4 @@
-import { BrowserProvider, Contract, formatEther } from "ethers";
+import { BrowserProvider, Contract, formatEther, JsonRpcProvider } from "ethers";
 import MarketplaceABI from "../abi/Marketplace.json";
 import { CONTRACT_ADDRESS } from "../config";
 
@@ -133,8 +133,7 @@ export const getContract = async (expectedAddress = null) => {
 // Charger produits (lecture seule, sans signer requis)
 export const getAllProducts = async () => {
   try {
-    if (!window.ethereum) return [];
-    const provider = new BrowserProvider(window.ethereum);
+    const provider = new JsonRpcProvider("http://127.0.0.1:8545");
     const contract = new Contract(CONTRACT_ADDRESS, MarketplaceABI.abi, provider);
     const count = await contract.productCount();
     const products = [];
